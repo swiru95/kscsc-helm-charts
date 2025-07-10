@@ -20,6 +20,10 @@ files:
 ingress:
   enabled: true
   className: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/redirect-entry-point: websecure
   hosts:
     - host: actualbudget.kscsc.local
       paths:
@@ -39,7 +43,7 @@ resources:
     cpu: 200m
     memory: 512Mi
 
-# Authentication OIDC - Entra ID
+# Authentication (password-based)
 login:
   method: openid
   allowedLoginMethods:
@@ -48,5 +52,5 @@ login:
     enforce: true
     providerName: "KSCSC Entra"
     discoveryUrl: "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration"
-    clientId: "<dummy>"
-    clientSecret: "<dummy>"
+    clientId: "<draft>"
+    clientSecret: "<draft>"
