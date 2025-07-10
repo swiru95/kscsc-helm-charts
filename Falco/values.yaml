@@ -1,0 +1,25 @@
+falco:
+  jsonOutput: true
+  jsonIncludeOutputProperty: true
+  httpOutput:
+    enabled: true
+    url: "http://falcosidekick:2801/"
+
+falcosidekick:
+  enabled: true
+  webui:
+    enabled: true
+    user: "admin:admin" # Default credentials, change in production
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - host: falco.kscsc.local
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+      tls:
+      - secretName: falco-tls
+        hosts:
+          - falco.kscsc.local
+
