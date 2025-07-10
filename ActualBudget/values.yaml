@@ -1,0 +1,52 @@
+# values.yaml
+replicaCount: 1
+strategy:
+  type: Recreate
+
+# Persistence
+persistence:
+  enabled: true
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+
+# File storage
+files:
+  dataDirectory: /data
+  server: /data/server-files
+  user: /data/user-files
+
+# Ingress
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: actualbudget.kscsc.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls:
+    - secretName: actualbudget-tls
+      hosts:
+        - actualbudget.kscsc.local
+
+# Resources
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+
+# Authentication OIDC - Entra ID
+login:
+  method: openid
+  allowedLoginMethods:
+    - openid
+  openid:
+    enforce: true
+    providerName: "KSCSC Entra"
+    discoveryUrl: "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration"
+    clientId: "<dummy>"
+    clientSecret: "<dummy>"
