@@ -52,3 +52,15 @@ oidc:
     - openid
     - profile
     - email
+
+# Persistent volume claim for OpenUI data (optional)
+# Enable to persist DB, secrets and uploads. Default size: 5Gi
+pvc:
+  enabled: true
+  # leave blank to use cluster default storageClass
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+  # optional explicit claim name; if empty, chart will create one based on release name
+  name: ""

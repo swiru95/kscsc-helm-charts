@@ -23,6 +23,12 @@ spec:
           env:
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
+{{- if .Values.pvc.enabled }}
+          workingDir: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+{{- end }}
 {{- if .Values.oidc.enabled }}
             - name: OIDC_ISSUER
               value: "{{ .Values.oidc.issuer }}"
@@ -45,6 +51,12 @@ spec:
 {{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
+{{- if .Values.pvc.enabled }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "openui.fullname" . }}-data{{ end }}
+{{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
