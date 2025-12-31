@@ -46,7 +46,7 @@ oidc:
   # Key in the secret that holds the client secret (default: client-secret)
   clientSecretKey: "client-secret"
   # Redirect URI the app registration should allow, defaults to example host used by chart
-  redirectURI: "https://upenui.kscsc.local/oauth2/callback"
+  redirectURI: "https://openui.kscsc.local/oauth2/callback"
   # Scopes to request
   scopes:
     - openid
