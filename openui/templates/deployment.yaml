@@ -23,11 +23,20 @@ spec:
           env:
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
-{{- if .Values.pvc.enabled }}
-          volumeMounts:
-            - name: data
-              mountPath: /data
-{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
 {{- if .Values.oidc.enabled }}
             - name: OIDC_ISSUER
               value: "{{ .Values.oidc.issuer }}"
@@ -47,6 +56,11 @@ spec:
               value: "{{ .Values.oidc.redirectURI }}"
             - name: OIDC_SCOPES
               value: "{{ join "," .Values.oidc.scopes }}"
+{{- end }}
+{{- if .Values.pvc.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
 {{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
