@@ -24,7 +24,6 @@ spec:
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
 {{- if .Values.pvc.enabled }}
-          workingDir: /data
           volumeMounts:
             - name: data
               mountPath: /data

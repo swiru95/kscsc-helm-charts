@@ -36,7 +36,7 @@ affinity: {}
 oidc:
   enabled: false
   # OIDC issuer URL (issuer discovery endpoint), e.g. https://login.microsoftonline.com/<TENANT_ID>/v2.0
-  issuer: "https://login.microsoftonline.com/<TENANT ID>/v2.0"
+  issuer: "https://login.microsoftonline.com/TENANTID/v2.0"
   # Application (client) ID
   clientID: ""
   # (discouraged) plain client secret. Prefer using `clientSecretSecretName`.
