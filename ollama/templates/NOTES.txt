@@ -1,0 +1,28 @@
+Thank you for installing {{ .Chart.Name }}!
+
+1. To see the service and port:
+
+  kubectl get svc -l app={{ include "ollama.name" . }} -n <namespace>
+
+2. Port-forward to access the Ollama server locally:
+
+  kubectl port-forward deploy/{{ include "ollama.fullname" . }} 11434:{{ .Values.service.port }} -n <namespace>
+
+Open http://localhost:11434 (or the port you forwarded).
+
+3. To change the model or storage size at install/upgrade time:
+
+  helm upgrade --install my-release ./ollama/hello-pvc \
+    --namespace my-ns --create-namespace \
+    --set model.name=mistral7b \
+    --set pvc.size=20Gi
+
+  4. Ingress
+
+    If `ingress.enabled` is true the chart creates an Ingress. By default it
+    uses host `ollama.local` and `ingressClassName: nginx`. Add a hosts entry
+    to `/etc/hosts` for testing:
+
+      127.0.0.1 ollama.local
+
+    Then access http://ollama.local

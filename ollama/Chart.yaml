@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ollama
+description: Helm chart to deploy Ollama model server with a models PVC
+type: application
+version: 0.1.0
+appVersion: "latest"

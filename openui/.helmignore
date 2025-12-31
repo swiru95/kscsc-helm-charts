@@ -1,0 +1,4 @@
+.helmignore
+.git/
+.DS_Store
+*.tgz

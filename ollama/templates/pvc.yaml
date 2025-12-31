@@ -1,0 +1,17 @@
+{{- if .Values.pvc.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "ollama.fullname" . }}-models{{ end }}
+  labels:
+    app: {{ include "ollama.name" . }}
+spec:
+  accessModes:
+{{ toYaml .Values.pvc.accessModes | indent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.pvc.size }}
+{{- if .Values.pvc.storageClass }}
+  storageClassName: {{ .Values.pvc.storageClass }}
+{{- end }}
+{{- end }}

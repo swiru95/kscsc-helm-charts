@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ollama.fullname" . }}
+  labels:
+    app: {{ include "ollama.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "ollama.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "ollama.name" . }}
+    spec:
+      containers:
+        - name: ollama
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          args:
+{{ toYaml .Values.commandArgs | indent 12 }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          env:
+            - name: MODEL_NAME
+              value: "{{ .Values.model.name }}"
+          volumeMounts:
+            - name: models
+              mountPath: /var/lib/ollama
+      volumes:
+        - name: models
+{{- if .Values.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "ollama.fullname" . }}-models{{ end }}
+{{- else }}
+          emptyDir: {}
+{{- end }}

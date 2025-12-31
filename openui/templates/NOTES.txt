@@ -1,0 +1,9 @@
+Thank you for installing {{ .Chart.Name }}!
+
+OpenUI is now deployed and connected to Ollama at {{ .Values.ollama.baseUrl }}.
+
+To access the web UI:
+- Via ingress: http://openui.local (add to /etc/hosts: 127.0.0.1 openui.local)
+- Or port-forward: kubectl port-forward deploy/{{ include "openui.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+Ensure Ollama has models pulled for the UI to work.

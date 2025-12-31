@@ -1,0 +1,54 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/open-webui/open-webui
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  ingressClassName: "nginx"
+  annotations: |
+    kubernetes.io/ingress.class: "nginx"
+  hosts:
+    - host: openui.kscsc.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+ollama:
+  baseUrl: "http://my-ollama-ollama.ollama.svc.cluster.local:11434"
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# OIDC / Oauth2 config (optional)
+# Prefer creating a Kubernetes Secret for the client secret and referencing it
+# with `clientSecretSecretName`. Leave `enabled` false by default.
+oidc:
+  enabled: false
+  # OIDC issuer URL (issuer discovery endpoint), e.g. https://login.microsoftonline.com/<TENANT_ID>/v2.0
+  issuer: "https://login.microsoftonline.com/<TENANT ID>/v2.0"
+  # Application (client) ID
+  clientID: ""
+  # (discouraged) plain client secret. Prefer using `clientSecretSecretName`.
+  clientSecret: ""
+  # Name of a Kubernetes Secret containing the client secret (key name configured below)
+  clientSecretSecretName: "openui-oidc-client-secret"
+  # Key in the secret that holds the client secret (default: client-secret)
+  clientSecretKey: "client-secret"
+  # Redirect URI the app registration should allow, defaults to example host used by chart
+  redirectURI: "https://upenui.kscsc.local/oauth2/callback"
+  # Scopes to request
+  scopes:
+    - openid
+    - profile
+    - email

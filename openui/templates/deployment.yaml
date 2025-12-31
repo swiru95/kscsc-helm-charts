@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openui.fullname" . }}
+  labels:
+    app: {{ include "openui.name" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "openui.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "openui.name" . }}
+    spec:
+      containers:
+        - name: openui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          env:
+            - name: OLLAMA_BASE_URL
+              value: "{{ .Values.ollama.baseUrl }}"
+{{- if .Values.oidc.enabled }}
+            - name: OIDC_ISSUER
+              value: "{{ .Values.oidc.issuer }}"
+            - name: OIDC_CLIENT_ID
+              value: "{{ .Values.oidc.clientID }}"
+{{- if .Values.oidc.clientSecretSecretName }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.oidc.clientSecretSecretName }}"
+                  key: "{{ .Values.oidc.clientSecretKey | default "client-secret" }}"
+{{- else }}
+            - name: OIDC_CLIENT_SECRET
+              value: "{{ .Values.oidc.clientSecret }}"
+{{- end }}
+            - name: OIDC_REDIRECT_URI
+              value: "{{ .Values.oidc.redirectURI }}"
+            - name: OIDC_SCOPES
+              value: "{{ join "," .Values.oidc.scopes }}"
+{{- end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
