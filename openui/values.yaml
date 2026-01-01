@@ -27,7 +27,10 @@ ollama:
 resources: {}
 
 nodeSelector: {}
-tolerations: []
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
 affinity: {}
 
 # OIDC / Oauth2 config (optional)

@@ -34,7 +34,7 @@ spec:
             httpGet:
               path: /
               port: {{ .Values.service.port }}
-            initialDelaySeconds: 30
+            initialDelaySeconds: 300
             periodSeconds: 10
             failureThreshold: 3
 {{- if .Values.oidc.enabled }}
@@ -60,7 +60,7 @@ spec:
 {{- if .Values.pvc.enabled }}
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /app/backend/data
 {{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}

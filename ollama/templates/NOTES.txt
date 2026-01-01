@@ -26,3 +26,23 @@ Open http://localhost:11434 (or the port you forwarded).
       127.0.0.1 ollama.local
 
     Then access http://ollama.local
+
+6. GPU / NVIDIA notes
+
+    If you plan to run Ollama on nodes with NVIDIA GPUs, follow these prerequisites:
+
+      - NVIDIA drivers must be installed on the node(s).
+      - Deploy the NVIDIA Device Plugin or the NVIDIA GPU Operator so the resource
+        `nvidia.com/gpu` is available to the scheduler.
+
+    To enable GPU via the chart values, set `gpu.enabled=true` (defaults to false) or use `-f gpu-values.yaml`.
+
+    Example: enable GPU at install time
+
+      helm upgrade --install ollama ./ollama -f ./ollama/gpu-values.yaml --set gpu.enabled=true
+
+    After deployment check pod allocation and resources:
+
+      kubectl describe pod <ollama-pod>  # check Allocated resources contains nvidia.com/gpu: 1
+      kubectl logs <gpu-plugin-pod> -n kube-system  # (if troubleshooting)
+

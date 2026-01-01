@@ -14,6 +14,40 @@ spec:
       labels:
         app: {{ include "ollama.name" . }}
     spec:
+      {{- if .Values.gpu.enabled }}
+      {{- if .Values.gpu.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.gpu.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.gpu.tolerations }}
+      tolerations:
+{{ toYaml .Values.gpu.tolerations | indent 8 }}
+      {{- end }}
+      {{- if .Values.gpu.affinity }}
+      affinity:
+{{ toYaml .Values.gpu.affinity | indent 8 }}
+      {{- end }}
+      {{- else }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+      {{- end }}
+      {{- end }}
+      {{- if .Values.runtimeClassName }}
+      runtimeClassName: {{ .Values.runtimeClassName | quote }}
+      {{- end }}
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+{{ toYaml .Values.podSecurityContext | indent 8 }}
+      {{- end }}
       containers:
         - name: ollama
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -22,8 +56,14 @@ spec:
             - containerPort: {{ .Values.service.port }}
           args:
 {{ toYaml .Values.commandArgs | indent 12 }}
+          {{- $res := .Values.resources | default dict }}
+          {{- $limits := $res.limits | default dict }}
+          {{- if .Values.gpu.enabled }}
+          {{- $_ := set $limits .Values.gpu.resourceName .Values.gpu.count }}
+          {{- end }}
+          {{- $_ := set $res "limits" $limits }}
           resources:
-{{ toYaml .Values.resources | indent 12 }}
+{{ toYaml $res | indent 12 }}
           env:
             - name: MODEL_NAME
               value: "{{ .Values.model.name }}"

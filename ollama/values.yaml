@@ -27,15 +27,45 @@ commandArgs: []
 
 resources:
   requests:
-    cpu: "0.5"
-    memory: "2Gi"
-  limits:
     cpu: "2"
-    memory: "8Gi"
+    memory: "24Gi"
+  limits:
+    cpu: "4"
+    memory: "32Gi"
 
-nodeSelector: {}
-tolerations: []
-affinity: {}
+# Set to true to request GPUs (adds `{{ "nvidia.com/gpu" }}` to limits by default).
+# When enabled, the chart will also use `gpu.nodeSelector`, `gpu.tolerations` and `gpu.affinity`
+# for scheduling unless you override the top-level equivalents.
+gpu:
+  enabled: true
+  # GPU resource name (usually nvidia.com/gpu)
+  resourceName: "nvidia.com/gpu"
+  # How many GPUs to request
+  count: 1
+  # Defaults to target common NVIDIA label/taint — adjust to your cluster
+  nodeSelector:
+    # nvidia.com/gpu.present: "true"
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: In
+                values:
+                  - "true"
+
+# Optional: set to a runtimeClass if your cluster requires a handler for GPU runtimes
+runtimeClassName: "nvidia"
+# Pod-level securityContext (optional)
+podSecurityContext: {}
+# Container-level securityContext (optional)
+containerSecurityContext: {}
 
 ingress:
   enabled: true
@@ -49,3 +79,10 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
+
+networkPolicy:
+  enabled: true
+  # Define the labels of the pods that are allowed to connect.
+  # This example allows pods with the label 'app: openui'.
+  allowFromPodLabels:
+    app: openui
