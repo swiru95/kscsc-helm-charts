@@ -3,6 +3,11 @@ replicaCount: 1
 strategy:
   type: Recreate
 
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+
 # Persistence
 persistence:
   enabled: true
@@ -19,11 +24,9 @@ files:
 # Ingress
 ingress:
   enabled: true
-  className: traefik
+  className: nginx
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-    traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/redirect-entry-point: websecure
+    kubernetes.io/ingress.class: "nginx"
   hosts:
     - host: actualbudget.kscsc.local
       paths:
@@ -51,6 +54,6 @@ login:
   openid:
     enforce: true
     providerName: "KSCSC Entra"
-    discoveryUrl: "https://login.microsoftonline.com/<tenant>/v2.0/.well-known/openid-configuration"
-    clientId: "<draft>"
-    clientSecret: "<draft>"
+    discoveryUrl: "https://login.microsoftonline.com/X/v2.0/.well-known/openid-configuration"
+    clientId: "X"
+    clientSecret: "X"
