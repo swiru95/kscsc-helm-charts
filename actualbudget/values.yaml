@@ -54,6 +54,6 @@ login:
   openid:
     enforce: true
     providerName: "KSCSC Entra"
-    discoveryUrl: "https://login.microsoftonline.com/X/v2.0/.well-known/openid-configuration"
-    clientId: "X"
-    clientSecret: "X"
+    discoveryUrl: "https://login.microsoftonline.com/XX/v2.0/.well-known/openid-configuration"
+    clientId: "XX"
+    clientSecret: "XX"

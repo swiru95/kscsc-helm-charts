@@ -4,7 +4,7 @@ This repository contains a collection of Helm charts for deploying and managing 
 
 ## List of Charts
 
-- [ActualBudget](/ActualBudget/README.md): Helm chart for deploying the ActualBudget application.
+- [ActualBudget](/actualbudget/README.md): Helm chart for deploying the ActualBudget application.
 - [N8N](/n8n-hosting/README.md): Helm chart and resources for deploying n8n automation workflows.
 
 For more information about each chart, refer to the respective README files linked above.
