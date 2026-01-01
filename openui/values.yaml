@@ -14,6 +14,8 @@ ingress:
   ingressClassName: "nginx"
   annotations: |
     kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
   hosts:
     - host: openui.kscsc.local
       paths:
@@ -33,28 +35,30 @@ tolerations:
     effect: "NoSchedule"
 affinity: {}
 
-# OIDC / Oauth2 config (optional)
-# Prefer creating a Kubernetes Secret for the client secret and referencing it
-# with `clientSecretSecretName`. Leave `enabled` false by default.
 oidc:
   enabled: true
-  # OIDC issuer URL (issuer discovery endpoint), e.g. https://login.microsoftonline.com/<TENANT_ID>/v2.0
-  issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
-  # Application (client) ID
-  clientID: ""
-  # (discouraged) plain client secret. Prefer using `clientSecretSecretName`.
-  clientSecret: ""
-  # Name of a Kubernetes Secret containing the client secret (key name configured below)
-  clientSecretSecretName: ""
-  # Key in the secret that holds the client secret (default: client-secret)
-  clientSecretKey: ""
-  # Redirect URI the app registration should allow, defaults to example host used by chart
-  redirectURI: "https://openui.kscsc.local/oauth2/callback"
-  # Scopes to request
+  issuer: "https://login.microsoftonline.com/<TID>/v2.0/.well-known/openid-configuration"
+  clientID: "<CLIENT_ID>"
+  clientSecret: "<CLIENT_SECRET>"
+  redirectURI: "https://openui.kscsc.local/oauth/oidc/callback"
   scopes:
     - openid
     - profile
     - email
+
+extraEnv:
+  - name: WEBUI_URL
+    value: "https://openui.kscsc.local"
+  - name: ENABLE_LOGIN_FORM
+    value: "false"
+  - name: ENABLE_SIGNUP
+    value: "false"
+  - name: ENABLE_OAUTH_SIGNUP
+    value: "true"
+  - name: OAUTH_ROLES_CLAIM
+    value: "roles"
+  - name: OAUTH_ADMIN_ROLES
+    value: "<ROLE_NAME>"
 
 # Persistent volume claim for OpenUI data (optional)
 # Enable to persist DB, secrets and uploads. Default size: 5Gi

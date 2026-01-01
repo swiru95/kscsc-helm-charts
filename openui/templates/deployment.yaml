@@ -23,26 +23,46 @@ spec:
           env:
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
+
+            # --- OIDC Configuration ---
 {{- if .Values.oidc.enabled }}
-            - name: OIDC_ISSUER
+            # 1. The Provider URL (Issuer)
+            - name: OPENID_PROVIDER_URL
               value: "{{ .Values.oidc.issuer }}"
-            - name: OIDC_CLIENT_ID
+
+            # 2. Client ID
+            - name: OAUTH_CLIENT_ID
               value: "{{ .Values.oidc.clientID }}"
+
+            # 3. Client Secret
 {{- if .Values.oidc.clientSecretSecretName }}
-            - name: OIDC_CLIENT_SECRET
+            - name: OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: "{{ .Values.oidc.clientSecretSecretName }}"
                   key: "{{ .Values.oidc.clientSecretKey | default "client-secret" }}"
 {{- else }}
-            - name: OIDC_CLIENT_SECRET
+            - name: OAUTH_CLIENT_SECRET
               value: "{{ .Values.oidc.clientSecret }}"
 {{- end }}
-            - name: OIDC_REDIRECT_URI
+
+            # 4. Scopes
+            - name: OAUTH_SCOPES
+              value: "{{ join " " .Values.oidc.scopes }}"
+              
+            # 5. Redirect URI
+            {{- if .Values.oidc.redirectURI }}
+            - name: OAUTH_REDIRECT_URI
               value: "{{ .Values.oidc.redirectURI }}"
-            - name: OIDC_SCOPES
-              value: "{{ join "," .Values.oidc.scopes }}"
+            {{- end }}
 {{- end }}
+
+            # --- EXTRA ENV (Crucial for SSO Enforcement) ---
+            # This allows you to inject ENABLE_LOGIN_FORM, WEBUI_URL, etc.
+            {{- if .Values.extraEnv }}
+            {{- toYaml .Values.extraEnv | nindent 12 }}
+            {{- end }}
+
 {{- if .Values.pvc.enabled }}
           volumeMounts:
             - name: data
