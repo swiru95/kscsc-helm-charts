@@ -37,7 +37,7 @@ affinity: {}
 # Prefer creating a Kubernetes Secret for the client secret and referencing it
 # with `clientSecretSecretName`. Leave `enabled` false by default.
 oidc:
-  enabled: false
+  enabled: true
   # OIDC issuer URL (issuer discovery endpoint), e.g. https://login.microsoftonline.com/<TENANT_ID>/v2.0
   issuer: "https://login.microsoftonline.com/<TENANT_ID>/v2.0"
   # Application (client) ID
@@ -45,9 +45,9 @@ oidc:
   # (discouraged) plain client secret. Prefer using `clientSecretSecretName`.
   clientSecret: ""
   # Name of a Kubernetes Secret containing the client secret (key name configured below)
-  clientSecretSecretName: "openui-oidc-client-secret"
+  clientSecretSecretName: ""
   # Key in the secret that holds the client secret (default: client-secret)
-  clientSecretKey: "client-secret"
+  clientSecretKey: ""
   # Redirect URI the app registration should allow, defaults to example host used by chart
   redirectURI: "https://openui.kscsc.local/oauth2/callback"
   # Scopes to request

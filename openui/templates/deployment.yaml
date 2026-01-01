@@ -23,20 +23,6 @@ spec:
           env:
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
-          readinessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.service.port }}
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /
-              port: {{ .Values.service.port }}
-            initialDelaySeconds: 300
-            periodSeconds: 10
-            failureThreshold: 3
 {{- if .Values.oidc.enabled }}
             - name: OIDC_ISSUER
               value: "{{ .Values.oidc.issuer }}"
