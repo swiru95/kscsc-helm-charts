@@ -84,7 +84,11 @@ ingress:
 
 networkPolicy:
   enabled: true
-  # Define the labels of the pods that are allowed to connect.
-  # This example allows pods with the label 'app: openui'.
-  allowFromPodLabels:
-    app: openui
+  allow:
+    - name: openui
+      namespace: openui
+  ingress:
+    enabled: true
+    namespace: ingress-nginx
+    podLabels:
+      app.kubernetes.io/name: ingress-nginx
