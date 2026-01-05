@@ -67,12 +67,24 @@ podSecurityContext: {}
 # Container-level securityContext (optional)
 containerSecurityContext: {}
 
+oauth2ProxyBridge:
+  enabled: true
+  service:
+    name: oauth2-proxy
+    namespace: oauth2-proxy
+
 ingress:
   enabled: true
-  # ingressClassName commonly 'nginx' for nginx-ingress controller
   ingressClassName: "nginx"
-  annotations: |
+  annotations: 
     kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.oauth2-proxy.svc.cluster.local/oauth2/auth"
+    nginx.ingress.kubernetes.io/auth-signin: "https://auth.kscsc.local/oauth2/start?rd=https://$host$escaped_request_uri"
+    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-Access-Token,Authorization"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/client-header-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/large-client-header-buffers: "4 16k"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
   hosts:
@@ -80,6 +92,9 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
+          backend:
+            serviceName: ollama-ollama
+            servicePort: 11434
   tls: []
 
 networkPolicy:

@@ -7,7 +7,7 @@ metadata:
     app: {{ include "ollama.name" . }}
 {{- if .Values.ingress.annotations }}
   annotations:
-{{ tpl .Values.ingress.annotations . | indent 4 }}
+{{ toYaml .Values.ingress.annotations | nindent 4 }}
 {{- end }}
 spec:
   {{- if .Values.ingress.ingressClassName }}
@@ -23,9 +23,9 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "ollama.fullname" $ }}
+                name: {{ .backend.serviceName }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ .backend.servicePort }}
         {{- end }}
   {{- end }}
   {{- if .Values.ingress.tls }}
