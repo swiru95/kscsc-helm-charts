@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "splunk.fullname" . }}-forwarder
+  labels:
+    {{- include "splunk.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.forwarder.type }}
+  ports:
+    - port: {{ .Values.service.forwarder.port }}
+      targetPort: {{ .Values.service.forwarder.targetPort }}
+      protocol: TCP
+      name: forwarder
+  selector:
+    {{- include "splunk.selectorLabels" . | nindent 4 }}
