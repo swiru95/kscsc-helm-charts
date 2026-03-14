@@ -2,8 +2,8 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/open-webui/open-webui
-  tag: "latest"
-  pullPolicy: IfNotPresent
+  tag: "v0.8.10"
+  pullPolicy: Always
 
 service:
   type: ClusterIP
@@ -16,12 +16,16 @@ ingress:
     kubernetes.io/ingress.class: "nginx"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
   hosts:
     - host: openui.kscsc.local
       paths:
         - path: /
           pathType: Prefix
-  tls: []
+  tls:
+    - hosts:
+      - openui.kscsc.local
+      secretName: openui-tls
 
 ollama:
   baseUrl: "http://ollama-ollama.ollama.svc.cluster.local:11434"
@@ -37,9 +41,9 @@ affinity: {}
 
 oidc:
   enabled: true
-  issuer: "https://login.microsoftonline.com/<TID>/v2.0/.well-known/openid-configuration"
-  clientID: "<CLIENT_ID>"
-  clientSecret: "<CLIENT_SECRET>"
+  issuer: ""
+  clientID: ""
+  clientSecret: ""
   redirectURI: "https://openui.kscsc.local/oauth/oidc/callback"
   scopes:
     - openid
@@ -58,7 +62,7 @@ extraEnv:
   - name: OAUTH_ROLES_CLAIM
     value: "roles"
   - name: OAUTH_ADMIN_ROLES
-    value: "<ROLE_NAME>"
+    value: "Admin"
 
 # Persistent volume claim for OpenUI data (optional)
 # Enable to persist DB, secrets and uploads. Default size: 5Gi

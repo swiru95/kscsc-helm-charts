@@ -39,3 +39,41 @@ spec:
           {{- end }}
     {{- end }}
 {{- end }}
+{{- if and .Values.ingress.enabled .Values.ingress.ollamaProxy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "splunk.fullname" . }}-ollama-proxy
+  labels:
+    {{- include "splunk.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.ollamaProxy.annotations | nindent 4 }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          - path: {{ $.Values.ingress.ollamaProxy.path }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ include "splunk.fullname" $ }}-ollama-proxy
+                port:
+                  number: 11434
+    {{- end }}
+{{- end }}

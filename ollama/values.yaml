@@ -3,8 +3,8 @@ replicaCount: 1
 
 image:
   repository: ollama/ollama
-  tag: "latest"
-  pullPolicy: IfNotPresent
+  tag: "0.18.0"
+  pullPolicy: Always
 
 service:
   type: ClusterIP
@@ -12,39 +12,30 @@ service:
 
 pvc:
   enabled: true
-  # leave blank to use cluster default storageClass
   storageClass: ""
   accessModes:
     - ReadWriteOnce
-  size: 65Gi
-  # optional explicit claim name; if empty, chart will create one based on release name
+  size: 30Gi
   name: ""
 
 model:
-  name: mistral:7b-instruct-q4_0
+  name: SpeakLeash/bielik-11b-v3.0-instruct:Q6_K
 
 commandArgs: []
 
 resources:
   requests:
     cpu: "2"
-    memory: "24Gi"
+    memory: "8Gi"
   limits:
     cpu: "4"
-    memory: "32Gi"
+    memory: "16Gi"
 
-# Set to true to request GPUs (adds `{{ "nvidia.com/gpu" }}` to limits by default).
-# When enabled, the chart will also use `gpu.nodeSelector`, `gpu.tolerations` and `gpu.affinity`
-# for scheduling unless you override the top-level equivalents.
 gpu:
   enabled: true
-  # GPU resource name (usually nvidia.com/gpu)
   resourceName: "nvidia.com/gpu"
-  # How many GPUs to request
   count: 1
-  # Defaults to target common NVIDIA label/taint — adjust to your cluster
   nodeSelector:
-    # nvidia.com/gpu.present: "true"
   tolerations:
     - key: "nvidia.com/gpu"
       operator: "Exists"
@@ -60,11 +51,8 @@ gpu:
                 values:
                   - "true"
 
-# Optional: set to a runtimeClass if your cluster requires a handler for GPU runtimes
 runtimeClassName: "nvidia"
-# Pod-level securityContext (optional)
 podSecurityContext: {}
-# Container-level securityContext (optional)
 containerSecurityContext: {}
 
 oauth2ProxyBridge:
@@ -87,6 +75,8 @@ ingress:
     nginx.ingress.kubernetes.io/large-client-header-buffers: "4 16k"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
   hosts:
     - host: ollama.kscsc.local
       paths:
@@ -95,13 +85,18 @@ ingress:
           backend:
             serviceName: ollama-ollama
             servicePort: 11434
-  tls: []
+  tls:
+    - hosts:
+      - ollama.kscsc.local
+      secretName: ollama-tls
 
 networkPolicy:
   enabled: true
   allow:
     - name: openui
       namespace: openui
+    - name: splunk
+      namespace: splunk
   ingress:
     enabled: true
     namespace: ingress-nginx

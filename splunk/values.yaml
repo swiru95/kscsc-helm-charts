@@ -40,24 +40,38 @@ securityContext: {}
   # runAsUser: 1000
 
 service:
-  type: ClusterIP
-  port: 8000
+  web:
+    type: ClusterIP
+    port: 8000
+    targetPort: "web"
+  forwarder:
+    type: NodePort
+    port: 9997
+    targetPort: "forwarder"
 
 ingress:
   enabled: true
   className: "nginx"
-  annotations: {}
-    # kubernetes.io/ingress.class: nginx
-    # kubernetes.io/tls-acme: "true"
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
   hosts:
     - host: splunk.kscsc.local
       paths:
         - path: /
           pathType: ImplementationSpecific
-  tls: []
-  #  - secretName: chart-example-tls
-  #    hosts:
-  #      - chart-example.local
+  tls:
+   - hosts:
+     - splunk.kscsc.local
+     secretName: splunk-tls
+
+  ollamaProxy:
+    enabled: true
+    annotations:
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/rewrite-target: /$2
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    path: /api/ollama(/|$)(.*)
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
@@ -89,10 +103,15 @@ affinity: {}
 
 persistence:
   enabled: true
-  size: 10Gi
-  storageClassName: ""
+  size: 20Gi
+  etcSize: 5Gi
+  storageClassName: "local-path"
 
 splunk:
   password: "" # It is highly recommended to use a secret.
   existingSecret: "splunk-secret"
   existingSecretKey: "password"
+
+  # web.conf [settings] overrides
+  webConf:
+    enableInsecureLegacyHtml: true

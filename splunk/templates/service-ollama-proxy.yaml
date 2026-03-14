@@ -1,0 +1,14 @@
+{{- if and .Values.ingress.enabled .Values.ingress.ollamaProxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "splunk.fullname" . }}-ollama-proxy
+  labels:
+    {{- include "splunk.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: ollama-ollama.ollama.svc.cluster.local
+  ports:
+    - port: 11434
+      protocol: TCP
+{{- end }}

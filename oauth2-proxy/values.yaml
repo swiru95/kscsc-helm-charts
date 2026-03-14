@@ -1,13 +1,13 @@
 config:
-  clientID: "<CLIENT_ID>"
-  clientSecret: "<CLIENT_SECRET_VALUE>"
-  cookieSecret: "<COOKIE_SECRET_VALUE>"
+  clientID: ""
+  clientSecret: ""
+  cookieSecret: ""  
   redirect_url: "https://auth.kscsc.local/oauth2/callback"
   configFile: |
     provider="entra-id"
-    oidc_issuer_url="https://login.microsoftonline.com/<tenant_id>"/v2.0"
+    oidc_issuer_url=""
     scope="openid email profile"
-    allowed_groups=["<group_object_id>"]
+    allowed_groups=[""]
     email_domains=["kscsc.online"]    
     cookie_domains=[".kscsc.local"]
     whitelist_domains=["*.kscsc.local"]
@@ -27,12 +27,10 @@ ingress:
   hosts:
     - auth.kscsc.local
   tls: []
-
   proxy_prefix: "/oauth2"
   cookieSecure: false 
   extraArgs:
     log-level: "debug"
-
 tolerations:
   - key: "nvidia.com/gpu"
     operator: "Exists"

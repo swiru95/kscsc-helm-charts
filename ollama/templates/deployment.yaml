@@ -6,6 +6,11 @@ metadata:
     app: {{ include "ollama.name" . }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: {{ include "ollama.name" . }}
@@ -48,6 +53,13 @@ spec:
       securityContext:
 {{ toYaml .Values.podSecurityContext | indent 8 }}
       {{- end }}
+      initContainers:
+        - name: init-ollama-home
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ['mkdir', '-p', '/root/.ollama']
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
       containers:
         - name: ollama
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -64,12 +76,16 @@ spec:
           {{- $_ := set $res "limits" $limits }}
           resources:
 {{ toYaml $res | indent 12 }}
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "nohup sh -c 'sleep 30 && (ollama pull {{ .Values.model.name }} 2>&1 && echo \"✓ Model {{ .Values.model.name }} is ready\" || echo \"✗ Model pull failed\") > /tmp/model-pull.log 2>&1 &' > /dev/null 2>&1 &"]
           env:
             - name: MODEL_NAME
               value: "{{ .Values.model.name }}"
           volumeMounts:
             - name: models
-              mountPath: /var/lib/ollama
+              mountPath: /root/.ollama
       volumes:
         - name: models
 {{- if .Values.pvc.enabled }}

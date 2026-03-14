@@ -46,6 +46,8 @@ spec:
               value: "--accept-license"
             - name: SPLUNK_GENERAL_TERMS
               value: "--accept-sgt-current-at-splunk-com"
+            - name: SPLUNK_DEFAULTS_URL
+              value: /tmp/defaults/default.yml
             - name: SPLUNK_PASSWORD
             {{- if .Values.splunk.existingSecret }}
               valueFrom:
@@ -60,6 +62,8 @@ spec:
               mountPath: /opt/splunk/var
             - name: splunk-etc
               mountPath: /opt/splunk/etc
+            - name: splunk-defaults
+              mountPath: /tmp/defaults
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -71,7 +75,15 @@ spec:
           emptyDir: {}
           {{- end }}
         - name: splunk-etc
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "splunk.fullname" . }}-etc
+          {{- else }}
           emptyDir: {}
+          {{- end }}
+        - name: splunk-defaults
+          configMap:
+            name: {{ include "splunk.fullname" . }}-defaults
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -14,4 +14,20 @@ spec:
   {{- if .Values.persistence.storageClassName }}
   storageClassName: {{ .Values.persistence.storageClassName }}
   {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "splunk.fullname" . }}-etc
+  labels:
+    {{- include "splunk.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.etcSize | default "5Gi" }}
+  {{- if .Values.persistence.storageClassName }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  {{- end }}
 {{- end }}
