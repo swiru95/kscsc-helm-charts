@@ -1,0 +1,60 @@
+gateway:
+  name: envoy-gateway
+  className: envoy-gateway-class
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: envoy-tls-secret
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: tcp
+      protocol: TCP
+      port: 9997
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+gatewayClass:
+  create: true
+  name: envoy-gateway-class
+  controllerName: gateway.envoyproxy.io
+
+controller:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: envoyproxy/envoy-gateway
+    tag: main
+    pullPolicy: IfNotPresent
+
+dataPlane:
+  enabled: false
+  managed: true
+  replicaCount: 1
+  image:
+    repository: envoyproxy/envoy
+    tag: v1.29-latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 10000
+
+httproute:
+  name: envoy-httproute
+
+tcproute:
+  name: envoy-tcproute
+
+coraza:
+  enabled: false
