@@ -1,0 +1,6 @@
+apiVersion: v2
+name: coredns-custom
+description: Custom CoreDNS configuration for K3s — resolves *.kscsc.local to the in-cluster ingress controller
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

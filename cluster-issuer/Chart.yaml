@@ -1,0 +1,10 @@
+apiVersion: v2
+name: cluster-issuer
+description: Installs cert-manager and configures a CA ClusterIssuer using KSCSC intermediate CA
+type: application
+version: 0.1.0
+appVersion: "1.17.2"
+dependencies:
+  - name: cert-manager
+    version: "1.17.2"
+    repository: https://charts.jetstack.io

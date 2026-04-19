@@ -1,0 +1,31 @@
+# coreDNS-custom values
+# Creates the coredns-custom ConfigMap in kube-system and optionally patches
+# the CoreDNS Deployment to add GPU tolerations.
+
+# ---------------------------------------------------------------------------
+# DNS zone served by the custom server block
+# ---------------------------------------------------------------------------
+zone: kscsc.local
+
+# -- ClusterIP of the ingress controller (all *.kscsc.local traffic stays in-cluster)
+ingressIP: "10.43.79.66"
+
+# -- Host entries: each entry becomes "<ingressIP> <host>" inside the hosts plugin
+hosts:
+  - ca.kscsc.local
+  - ollama.kscsc.local
+  - openui.kscsc.local
+  - splunk.kscsc.local
+  - auth.kscsc.local
+  - actualbudget.kscsc.local
+
+# ---------------------------------------------------------------------------
+# CoreDNS Deployment patch (GPU toleration)
+# ---------------------------------------------------------------------------
+patch:
+  # -- Whether to create a Job that patches CoreDNS deployment with GPU toleration
+  enabled: true
+  toleration:
+    key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"

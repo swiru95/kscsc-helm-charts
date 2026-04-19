@@ -1,0 +1,48 @@
+# cluster-issuer values
+# Installs cert-manager and creates an ACME ClusterIssuer backed by step-ca
+
+# ---------------------------------------------------------------------------
+# ACME ClusterIssuer settings
+# ---------------------------------------------------------------------------
+clusterIssuer:
+  # -- Name of the ClusterIssuer resource
+  name: kscsc-ca-issuer
+  # -- ACME server URL (step-ca's ACME endpoint)
+  server: https://step-ca-step-certificates.step-ca.svc.cluster.local/acme/acme/directory
+  # -- Email for ACME registration
+  email: contact@kscsc.online
+  # -- Skip TLS verification for the ACME server (step-ca uses a self-signed serving cert)
+  skipTLSVerify: true
+
+# -- Root CA certificate bundle for step-ca TLS verification (optional)
+# If skipTLSVerify is false, provide your root CA cert here
+ca:
+  # -- Your root CA certificate (PEM) — used to trust step-ca's TLS
+  crt: |
+
+# ---------------------------------------------------------------------------
+# cert-manager subchart values
+# ---------------------------------------------------------------------------
+cert-manager:
+  crds:
+    # CRDs installed separately: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.crds.yaml
+    enabled: false
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Exists"
+      effect: "NoSchedule"
+  webhook:
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+  cainjector:
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+  startupapicheck:
+    tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"

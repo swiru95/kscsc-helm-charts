@@ -1,0 +1,21 @@
+ClusterIssuer "{{ .Values.clusterIssuer.name }}" has been created.
+
+To issue a certificate, create a Certificate resource:
+
+  apiVersion: cert-manager.io/v1
+  kind: Certificate
+  metadata:
+    name: my-cert
+    namespace: my-namespace
+  spec:
+    secretName: my-cert-tls
+    issuerRef:
+      name: {{ .Values.clusterIssuer.name }}
+      kind: ClusterIssuer
+    dnsNames:
+      - myhost.kscsc.local
+
+Or annotate an Ingress:
+
+  annotations:
+    cert-manager.io/cluster-issuer: "{{ .Values.clusterIssuer.name }}"
