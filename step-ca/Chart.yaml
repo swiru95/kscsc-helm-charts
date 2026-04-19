@@ -1,0 +1,6 @@
+apiVersion: v2
+name: step-ca
+description: Configuration values for Smallstep step-certificates Helm chart (certificate authority)
+type: application
+version: 0.1.0
+appVersion: "0.30.2"
