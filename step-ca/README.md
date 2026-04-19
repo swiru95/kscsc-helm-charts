@@ -58,6 +58,44 @@ Then update the `inject.config.files.ca.json.authority.provisioners` JWK entry i
 
 ### 3. Prepare secrets
 
+#### Intermediate CA key format
+
+step-ca requires the intermediate CA private key in **legacy OpenSSL encrypted PEM** format (`Proc-Type: 4,ENCRYPTED` / `DEK-Info` headers). It does **not** support PKCS#8 encrypted keys (`-----BEGIN ENCRYPTED PRIVATE KEY-----`).
+
+Expected format:
+```
+-----BEGIN EC PRIVATE KEY-----
+Proc-Type: 4,ENCRYPTED
+DEK-Info: AES-256-CBC,<hex-iv>
+
+<base64-encoded encrypted key data>
+-----END EC PRIVATE KEY-----
+```
+
+If your key is in PKCS#8 format (`-----BEGIN ENCRYPTED PRIVATE KEY-----`), convert it:
+
+```bash
+# 1. Decrypt the PKCS#8 key (will prompt for password)
+openssl pkey -in intermediate.key.pem -out intermediate_plain.key
+
+# 2. Re-encrypt in legacy OpenSSL format
+openssl ec -in intermediate_plain.key -aes256 -out intermediate_legacy.key
+# → enter the same password you'll use for ca_password
+
+# 3. Remove the plaintext key
+rm intermediate_plain.key
+```
+
+If your key is unencrypted (`-----BEGIN EC PRIVATE KEY-----` without `Proc-Type` headers), encrypt it:
+
+```bash
+openssl ec -in intermediate_plain.key -aes256 -out intermediate_legacy.key
+```
+
+Then paste the contents of `intermediate_legacy.key` into `inject.secrets.x509.intermediate_ca_key` in `values.yaml`.
+
+#### Passwords and fingerprint
+
 ```bash
 # Base64-encode your CA key password
 echo -n "your-ca-key-password" | base64
