@@ -1,0 +1,4 @@
+apiVersion: v2
+name: pocEnvoy
+description: Minimal Envoy Gateway values/installation helper
+version: 0.1.0

@@ -1,0 +1,4 @@
+apiVersion: v2
+name: helloWorld
+description: Hello World app for Envoy Gateway demo
+version: 0.1.0
