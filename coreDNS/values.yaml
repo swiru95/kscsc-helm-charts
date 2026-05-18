@@ -7,17 +7,21 @@
 # ---------------------------------------------------------------------------
 zone: kscsc.local
 
-# -- ClusterIP of the ingress controller (all *.kscsc.local traffic stays in-cluster)
-ingressIP: "10.43.79.66"
+# -- ClusterIP of the nginx ingress controller
+ingressIP: ""
+# -- ClusterIP of the Envoy Gateway LoadBalancer service
+envoyIP: ""
 
-# -- Host entries: each entry becomes "<ingressIP> <host>" inside the hosts plugin
+# -- Host entries split by ingress controller
 hosts:
-  - ca.kscsc.local
-  - ollama.kscsc.local
-  - openui.kscsc.local
-  - splunk.kscsc.local
-  - auth.kscsc.local
-  - actualbudget.kscsc.local
+  nginx: []
+  envoy:
+    - actualbudget.kscsc.local
+    - ollama.kscsc.local
+    - openui.kscsc.local
+    - ca.kscsc.local
+    - splunk.kscsc.local
+    - auth.kscsc.local
 
 # ---------------------------------------------------------------------------
 # CoreDNS Deployment patch (GPU toleration)

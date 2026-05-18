@@ -17,8 +17,12 @@ spec:
     {{- end }}
     solvers:
       - http01:
-          ingress:
-            ingressClassName: nginx
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: {{ .Values.clusterIssuer.solver.gatewayName }}
+                namespace: {{ .Values.clusterIssuer.solver.gatewayNamespace }}
+                kind: Gateway
+                group: gateway.networking.k8s.io
             podTemplate:
               spec:
                 tolerations:

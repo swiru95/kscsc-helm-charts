@@ -9,8 +9,11 @@ data:
   {{ .Values.zone | replace "." "-" }}.server: |
     {{ .Values.zone }}:53 {
       hosts {
-        {{- range .Values.hosts }}
+        {{- range .Values.hosts.nginx }}
         {{ $.Values.ingressIP }} {{ . }}
+        {{- end }}
+        {{- range .Values.hosts.envoy }}
+        {{ $.Values.envoyIP }} {{ . }}
         {{- end }}
         fallthrough
       }

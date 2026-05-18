@@ -1,0 +1,14 @@
+{{- if .Values.backendTLS.enabled }}
+{{- $certs := lookup "v1" "ConfigMap" .Release.Namespace "step-ca-step-certificates-certs" }}
+{{- if $certs }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: step-ca-backend-tls-ca
+  namespace: {{ .Release.Namespace }}
+data:
+  ca.crt: |
+{{ index $certs.data "root_ca.crt" | trim | indent 4 }}
+{{ index $certs.data "intermediate_ca.crt" | trim | indent 4 }}
+{{- end }}
+{{- end }}

@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/open-webui/open-webui
-  tag: "v0.8.10"
+  tag: "v0.9.5"
   pullPolicy: Always
 
 service:
@@ -10,22 +10,18 @@ service:
   port: 8080
 
 ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations: |
-    kubernetes.io/ingress.class: "nginx"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-  hosts:
-    - host: openui.kscsc.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - hosts:
-      - openui.kscsc.local
-      secretName: openui-tls
+  enabled: false
+
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: openui.kscsc.local
+  serviceName: openui-openui
+  servicePort: 8080
+  httpDirect: false
+  timeout: 60s
 
 ollama:
   baseUrl: "http://ollama-ollama.ollama.svc.cluster.local:11434"
@@ -75,3 +71,12 @@ pvc:
   size: 5Gi
   # optional explicit claim name; if empty, chart will create one based on release name
   name: ""
+
+networkPolicy:
+  enabled: true
+  allow: []
+  ingress:
+    enabled: true
+    namespace: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: envoy

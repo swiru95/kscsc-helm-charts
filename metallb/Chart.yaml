@@ -1,0 +1,4 @@
+apiVersion: v2
+name: metallb-config
+description: MetalLB L2 address pool and advertisement for kscsc cluster
+version: 0.1.0

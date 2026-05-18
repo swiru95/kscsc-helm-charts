@@ -13,10 +13,7 @@ kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/latest/
 ## 2) Install official Envoy Gateway Helm chart
 
 ```bash
-helm repo add envoyproxy https://helm.envoyproxy.io
-helm repo update
-
-helm upgrade --install envoy-gateway envoyproxy/gateway-helm \
+helm upgrade --install envoy-gateway oci://docker.io/envoyproxy/gateway-helm \
   --version v1.7.1 \
   -n envoy-gateway-system --create-namespace \
   -f values.yaml

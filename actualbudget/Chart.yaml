@@ -1,0 +1,8 @@
+apiVersion: v2
+name: actualbudget
+description: Actual Budget with Envoy Gateway HTTPRoute
+version: 0.1.0
+dependencies:
+  - name: actualbudget
+    version: "1.8.7"
+    repository: https://community-charts.github.io/helm-charts

@@ -1,0 +1,35 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "openui.fullname" . }}
+  labels:
+    app: {{ include "openui.name" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "openui.name" . }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.allow }}
+    - from:
+      {{- range .Values.networkPolicy.allow }}
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .namespace }}
+        podSelector:
+          matchLabels:
+            app: {{ .name }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.networkPolicy.ingress.enabled }}
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingress.namespace }}
+        podSelector:
+          matchLabels:
+{{ toYaml .Values.networkPolicy.ingress.podLabels | indent 12 }}
+    {{- end }}
+{{- end }}

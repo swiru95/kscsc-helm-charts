@@ -188,24 +188,30 @@ service:
   annotations: {}
 
 # =============================================================================
-# Ingress -- exposes CA to non-cluster clients
+# Ingress -- disabled, traffic handled by Envoy Gateway HTTPRoute
 # =============================================================================
 ingress:
+  enabled: false
+
+# =============================================================================
+# Envoy Gateway HTTPRoute
+# =============================================================================
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: ca.kscsc.local
+  serviceName: step-ca-step-certificates
+  servicePort: 443
+  httpDirect: false
+  timeout: 30s
+
+# BackendTLSPolicy -- Envoy connects to step-ca backend over HTTPS
+backendTLS:
   enabled: true
-  ingressClassName: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
-  hosts:
-    - host: ca.kscsc.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - hosts:
-        - ca.kscsc.local
-      # The CA serves its own TLS; passthrough is typically used
-      # secretName: step-ca-tls  # uncomment if using ingress-terminated TLS
+  # SNI hostname used by Envoy when connecting to the backend
+  hostname: step-ca-step-certificates.step-ca.svc.cluster.local
 
 # =============================================================================
 # Resources

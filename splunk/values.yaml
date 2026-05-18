@@ -50,28 +50,10 @@ service:
     targetPort: "forwarder"
 
 ingress:
-  enabled: true
-  className: "nginx"
-  annotations:
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-  hosts:
-    - host: splunk.kscsc.local
-      paths:
-        - path: /
-          pathType: ImplementationSpecific
-  tls:
-   - hosts:
-     - splunk.kscsc.local
-     secretName: splunk-tls
+  enabled: false
 
   ollamaProxy:
-    enabled: true
-    annotations:
-      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-      nginx.ingress.kubernetes.io/rewrite-target: /$2
-      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    path: /api/ollama(/|$)(.*)
+    enabled: false
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious

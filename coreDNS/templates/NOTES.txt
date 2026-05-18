@@ -1,7 +1,12 @@
 CoreDNS custom configuration deployed for zone "{{ .Values.zone }}".
 
-Hosts resolved to {{ .Values.ingressIP }} (ingress controller ClusterIP):
-{{- range .Values.hosts }}
+Hosts resolved to {{ .Values.ingressIP }} (nginx):
+{{- range .Values.hosts.nginx }}
+  - {{ . }}
+{{- end }}
+
+Hosts resolved to {{ .Values.envoyIP }} (Envoy Gateway):
+{{- range .Values.hosts.envoy }}
   - {{ . }}
 {{- end }}
 
@@ -9,7 +14,7 @@ To verify DNS resolution from inside the cluster:
 
   kubectl run dns-test --rm -it --restart=Never \
     --overrides='{"spec":{"tolerations":[{"key":"nvidia.com/gpu","operator":"Exists","effect":"NoSchedule"}]}}' \
-    --image=busybox -- nslookup {{ (index .Values.hosts 0) }}
+    --image=busybox -- nslookup {{ (index .Values.hosts.envoy 0) }}
 
 To check the configmap:
 

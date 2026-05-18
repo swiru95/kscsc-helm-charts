@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ollama/ollama
-  tag: "0.18.0"
+  tag: "0.23.4"
   pullPolicy: Always
 
 service:
@@ -15,13 +15,18 @@ pvc:
   storageClass: ""
   accessModes:
     - ReadWriteOnce
-  size: 30Gi
+  size: 50Gi
   name: ""
 
-model:
-  name: SpeakLeash/bielik-11b-v3.0-instruct:Q6_K
+models:
+  - SpeakLeash/bielik-11b-v3.0-instruct:Q6_K
+  - DeepHat/DeepHat-V1-7B
+  - gpt-oss:20b
 
 commandArgs: []
+
+env:
+  OLLAMA_KEEP_ALIVE: "3h"
 
 resources:
   requests:
@@ -55,50 +60,30 @@ runtimeClassName: "nvidia"
 podSecurityContext: {}
 containerSecurityContext: {}
 
-oauth2ProxyBridge:
-  enabled: true
-  service:
-    name: oauth2-proxy
-    namespace: oauth2-proxy
-
 ingress:
-  enabled: true
-  ingressClassName: "nginx"
-  annotations: 
-    kubernetes.io/ingress.class: "nginx"
-    nginx.ingress.kubernetes.io/auth-url: "http://oauth2-proxy.oauth2-proxy.svc.cluster.local/oauth2/auth"
-    nginx.ingress.kubernetes.io/auth-signin: "https://auth.kscsc.local/oauth2/start?rd=https://$host$escaped_request_uri"
-    nginx.ingress.kubernetes.io/auth-response-headers: "X-Auth-Request-Access-Token,Authorization"
-    nginx.ingress.kubernetes.io/proxy-buffer-size: "32k"
-    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
-    nginx.ingress.kubernetes.io/client-header-buffer-size: "16k"
-    nginx.ingress.kubernetes.io/large-client-header-buffers: "4 16k"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  enabled: false
 
-  hosts:
-    - host: ollama.kscsc.local
-      paths:
-        - path: /
-          pathType: Prefix
-          backend:
-            serviceName: ollama-ollama
-            servicePort: 11434
-  tls:
-    - hosts:
-      - ollama.kscsc.local
-      secretName: ollama-tls
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: ollama.kscsc.local
+  serviceName: ollama-ollama
+  servicePort: 11434
+  httpDirect: false
+  timeout: 600s
 
 networkPolicy:
   enabled: true
   allow:
     - name: openui
       namespace: openui
-    - name: splunk
-      namespace: splunk
+    - name: news-bot
+      namespace: news-bot
+      
   ingress:
     enabled: true
-    namespace: ingress-nginx
+    namespace: envoy-gateway-system
     podLabels:
-      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/name: envoy

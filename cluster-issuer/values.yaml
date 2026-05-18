@@ -13,6 +13,10 @@ clusterIssuer:
   email: contact@kscsc.online
   # -- Skip TLS verification for the ACME server (step-ca uses a self-signed serving cert)
   skipTLSVerify: true
+  solver:
+    # -- Envoy Gateway to use for ACME http01 challenges
+    gatewayName: envoy-gateway
+    gatewayNamespace: envoy-gateway-system
 
 # -- Root CA certificate bundle for step-ca TLS verification (optional)
 # If skipTLSVerify is false, provide your root CA cert here
@@ -24,6 +28,8 @@ ca:
 # cert-manager subchart values
 # ---------------------------------------------------------------------------
 cert-manager:
+  extraArgs:
+    - --enable-gateway-api
   crds:
     # CRDs installed separately: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.2/cert-manager.crds.yaml
     enabled: false

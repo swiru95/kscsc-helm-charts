@@ -1,0 +1,10 @@
+ipAddressPool:
+  name: first-pool
+  addresses:
+    - x-x
+  autoAssign: true
+
+l2Advertisement:
+  name: example
+  pools:
+    - first-pool

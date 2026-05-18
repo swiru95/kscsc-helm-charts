@@ -66,6 +66,13 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.service.port }}
+          {{- if .Values.env }}
+          env:
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+          {{- end }}
           args:
 {{ toYaml .Values.commandArgs | indent 12 }}
           {{- $res := .Values.resources | default dict }}
@@ -76,13 +83,17 @@ spec:
           {{- $_ := set $res "limits" $limits }}
           resources:
 {{ toYaml $res | indent 12 }}
+          {{- $modelList := list }}
+          {{- range .Values.models }}
+          {{- $modelList = append $modelList (printf "\"%s\"" .) }}
+          {{- end }}
           lifecycle:
             postStart:
               exec:
-                command: ["/bin/sh", "-c", "nohup sh -c 'sleep 30 && (ollama pull {{ .Values.model.name }} 2>&1 && echo \"✓ Model {{ .Values.model.name }} is ready\" || echo \"✗ Model pull failed\") > /tmp/model-pull.log 2>&1 &' > /dev/null 2>&1 &"]
-          env:
-            - name: MODEL_NAME
-              value: "{{ .Values.model.name }}"
+                command:
+                  - /bin/sh
+                  - -c
+                  - {{ printf "nohup sh -c 'sleep 30 && for m in %s; do ollama pull \"$m\" 2>&1 && echo \"✓ $m ready\" || echo \"✗ $m failed\"; done > /tmp/model-pull.log 2>&1 &' > /dev/null 2>&1 &" (join " " $modelList) | quote }}
           volumeMounts:
             - name: models
               mountPath: /root/.ollama

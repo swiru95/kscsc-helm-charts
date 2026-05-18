@@ -1,0 +1,15 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ .Values.gatewayClass.name }}-config
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        pod:
+          tolerations:
+            {{- toYaml .Values.deployment.pod.tolerations | nindent 12 }}
+      envoyService:
+        annotations:
+          metallb.universe.tf/loadBalancerIPs: {{ .Values.service.loadBalancerIP | quote }}
