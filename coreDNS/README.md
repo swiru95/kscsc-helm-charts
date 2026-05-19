@@ -2,7 +2,7 @@
 
 Creates the K3s `coredns-custom` ConfigMap so that `*.kscsc.local` resolves to the **nginx ingress controller's ClusterIP** inside the cluster. This keeps all traffic (including ACME HTTP-01 challenges) entirely in-cluster.
 
-Optionally patches the CoreDNS Deployment to add a GPU toleration and restarts it.
+Optionally reconciles the CoreDNS Deployment so the GPU toleration is restored after k3s re-applies its built-in CoreDNS addon on host restart.
 
 ## How it works
 
@@ -44,7 +44,7 @@ Then upgrade:
 helm upgrade coredns-custom . -n kube-system
 ```
 
-The post-upgrade hook will restart CoreDNS automatically.
+The reconcile CronJob will keep the toleration in place even after the host or k3s restarts.
 
 ## Configuration
 
@@ -53,7 +53,9 @@ The post-upgrade hook will restart CoreDNS automatically.
 | `zone` | DNS zone for the server block | `kscsc.local` |
 | `ingressIP` | ClusterIP of the ingress controller | `10.43.79.66` |
 | `hosts` | List of hostnames to resolve | See values.yaml |
-| `patch.enabled` | Run a Job to add GPU toleration + restart CoreDNS | `true` |
+| `patch.enabled` | Run a CronJob to restore the GPU toleration when k3s overwrites CoreDNS | `true` |
+| `patch.schedule` | How often the reconcile job checks CoreDNS | `*/2 * * * *` |
+| `patch.image.*` | Container image used by the reconcile job | `bitnami/kubectl:latest` |
 | `patch.toleration.key` | Taint key to tolerate | `nvidia.com/gpu` |
 | `patch.toleration.operator` | Toleration operator | `Exists` |
 | `patch.toleration.effect` | Taint effect | `NoSchedule` |

@@ -6,10 +6,6 @@ metadata:
   namespace: kube-system
   labels:
     {{- include "coredns-custom.labels" . | nindent 4 }}
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -18,10 +14,6 @@ metadata:
   namespace: kube-system
   labels:
     {{- include "coredns-custom.labels" . | nindent 4 }}
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -35,10 +27,6 @@ metadata:
   namespace: kube-system
   labels:
     {{- include "coredns-custom.labels" . | nindent 4 }}
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -49,50 +37,54 @@ subjects:
     namespace: kube-system
 ---
 apiVersion: batch/v1
-kind: Job
+kind: CronJob
 metadata:
   name: {{ include "coredns-custom.name" . }}-patch
   namespace: kube-system
   labels:
     {{- include "coredns-custom.labels" . | nindent 4 }}
-  annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
-  backoffLimit: 3
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: {{ include "coredns-custom.name" . }}-patch
+  schedule: {{ .Values.patch.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.patch.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.patch.failedJobsHistoryLimit }}
+  jobTemplate:
     spec:
-      serviceAccountName: {{ include "coredns-custom.name" . }}-patch
-      restartPolicy: OnFailure
-      tolerations:
-        - key: {{ .Values.patch.toleration.key | quote }}
-          operator: {{ .Values.patch.toleration.operator | quote }}
-          effect: {{ .Values.patch.toleration.effect | quote }}
-      containers:
-        - name: patch
-          image: bitnami/kubectl:latest
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              TOLERATION_KEY={{ .Values.patch.toleration.key | quote }}
-              # Check if toleration already exists
-              EXISTING=$(kubectl -n kube-system get deploy coredns \
-                -o jsonpath='{.spec.template.spec.tolerations[*].key}')
-              if echo "$EXISTING" | grep -qw "$TOLERATION_KEY"; then
-                echo "Toleration for $TOLERATION_KEY already present — skipping"
-              else
-                echo "Adding toleration for $TOLERATION_KEY to CoreDNS deployment"
-                kubectl -n kube-system patch deployment coredns --type=json \
-                  -p='[{"op":"add","path":"/spec/template/spec/tolerations/-","value":{"key":{{ .Values.patch.toleration.key | quote }},"operator":{{ .Values.patch.toleration.operator | quote }},"effect":{{ .Values.patch.toleration.effect | quote }}}}]'
-              fi
-              # Restart CoreDNS to pick up the new configmap
-              kubectl -n kube-system rollout restart deploy coredns
-              kubectl -n kube-system rollout status deploy coredns --timeout=120s
-              echo "CoreDNS restarted successfully"
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ include "coredns-custom.name" . }}-patch
+        spec:
+          serviceAccountName: {{ include "coredns-custom.name" . }}-patch
+          restartPolicy: OnFailure
+          tolerations:
+            - key: {{ .Values.patch.toleration.key | quote }}
+              operator: {{ .Values.patch.toleration.operator | quote }}
+              effect: {{ .Values.patch.toleration.effect | quote }}
+          containers:
+            - name: patch
+              image: {{ .Values.patch.image.repository }}:{{ .Values.patch.image.tag }}
+              imagePullPolicy: {{ .Values.patch.image.pullPolicy }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  TOLERATION_KEY={{ .Values.patch.toleration.key | quote }}
+                  TOLERATION_OPERATOR={{ .Values.patch.toleration.operator | quote }}
+                  TOLERATION_EFFECT={{ .Values.patch.toleration.effect | quote }}
+                  EXISTING=$(kubectl -n kube-system get deploy coredns \
+                    -o jsonpath='{.spec.template.spec.tolerations[*].key}')
+
+                  if echo "$EXISTING" | grep -qw "$TOLERATION_KEY"; then
+                    echo "Toleration for $TOLERATION_KEY already present"
+                    exit 0
+                  fi
+
+                  echo "Adding toleration for $TOLERATION_KEY to CoreDNS deployment"
+                  kubectl -n kube-system patch deployment coredns --type=json \
+                    -p='[{"op":"add","path":"/spec/template/spec/tolerations/-","value":{"key":'"\"$TOLERATION_KEY\""',"operator":'"\"$TOLERATION_OPERATOR\""',"effect":'"\"$TOLERATION_EFFECT\""'}}]'
+                  kubectl -n kube-system rollout status deploy coredns --timeout=120s
+                  echo "CoreDNS toleration restored successfully"
 {{- end }}

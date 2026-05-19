@@ -27,8 +27,16 @@ hosts:
 # CoreDNS Deployment patch (GPU toleration)
 # ---------------------------------------------------------------------------
 patch:
-  # -- Whether to create a Job that patches CoreDNS deployment with GPU toleration
+  # -- Whether to continuously reconcile the CoreDNS deployment with the GPU toleration
   enabled: true
+  # -- How often to re-check CoreDNS after k3s re-applies the built-in addon on host restart
+  schedule: "*/2 * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  image:
+    repository: bitnami/kubectl
+    tag: latest
+    pullPolicy: IfNotPresent
   toleration:
     key: "nvidia.com/gpu"
     operator: "Exists"
