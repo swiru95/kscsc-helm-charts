@@ -1,0 +1,101 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "news-bot.fullname" . }}
+  labels:
+    {{- include "news-bot.labels" . | nindent 4 }}
+    {{- include "news-bot.selectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.newsbot.schedule | quote }}
+  {{- if .Values.newsbot.timeZone }}
+  timeZone: {{ .Values.newsbot.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.newsbot.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.newsbot.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "news-bot.selectorLabels" . | nindent 12 }}
+            {{- with .Values.podLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          automountServiceAccountToken: false
+          containers:
+            - name: news-bot
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              {{- with .Values.newsbot.extraEnv }}
+              env:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              args:
+                - "--config=/config/config.yaml"
+                - "--opml=/config/Feeds.xml"
+                - "--markdown=/data/output/NEWS.md"
+                - "--output=/data/output/news.json"
+                - "--verbose"
+                {{- range .Values.newsbot.extraArgs }}
+                - {{ . | quote }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.newsbot.resources | nindent 16 }}
+              volumeMounts:
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: data
+                  mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi
+            - name: config
+              projected:
+                sources:
+                  - configMap:
+                      name: {{ include "news-bot.fullname" . }}-config
+                      items:
+                        - key: config.yaml
+                          path: config.yaml
+                  - configMap:
+                      name: {{ include "news-bot.feedsConfigMapName" . }}
+                      items:
+                        - key: Feeds.xml
+                          path: Feeds.xml
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "news-bot.pvcName" . }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+          {{- include "news-bot.scheduling" . | nindent 10 }}

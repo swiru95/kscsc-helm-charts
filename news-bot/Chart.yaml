@@ -1,0 +1,15 @@
+apiVersion: v2
+name: news-bot
+description: Cybersecurity news aggregator with LLM-powered clustering and LinkedIn posting
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cybersecurity
+  - news
+  - rss
+  - llm
+  - linkedin
+maintainers:
+  - name: Krzysztof Swidrak
+    email: kswidrak95@gmail.com

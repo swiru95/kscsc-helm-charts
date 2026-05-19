@@ -48,6 +48,7 @@ All `*.kscsc.local` DNS is resolved **in-cluster** via a custom CoreDNS server b
 | :--- | :--- | :--- |
 | **[n8n](n8n-hosting/kubernetes/n8n-helm/)** | `default` | Workflow automation platform |
 | **[Actual Budget](actualbudget/)** | `actualbudget` | Privacy-focused local-first personal finance |
+| **[news-bot](news-bot/)** | `news-bot` | Cybersecurity news pipeline and LinkedIn posting CronJobs |
 
 ---
 

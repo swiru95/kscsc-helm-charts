@@ -1,0 +1,37 @@
+
+=== news-bot deployed! ===
+
+CronJobs created:
+  - {{ include "news-bot.fullname" . }}          schedule: {{ .Values.newsbot.schedule }}
+{{- if .Values.linkedin.enabled }}
+  - {{ include "news-bot.fullname" . }}-linkedin  schedule: {{ .Values.linkedin.schedule }}
+{{- end }}
+
+{{- if not .Values.feeds.inline }}
+{{- if not .Values.feeds.existingConfigMap }}
+
+!! IMPORTANT: Feeds.xml not provided inline.
+   Create the ConfigMap from your OPML file:
+
+   kubectl create configmap {{ include "news-bot.fullname" . }}-feeds \
+     --from-file=Feeds.xml=Feeds.xml \
+     -n {{ .Release.Namespace }}
+{{- end }}
+{{- end }}
+
+{{- if and .Values.secrets.create (not .Values.secrets.linkedin.clientSecret) }}
+
+!! WARNING: LinkedIn client secret is empty.
+   Update the secret:
+
+   kubectl patch secret {{ include "news-bot.secretName" . }} -n {{ .Release.Namespace }} \
+     -p '{"stringData":{"linkedin-client-secret":"YOUR_SECRET"}}'
+{{- end }}
+
+Manual run:
+  kubectl create job -n {{ .Release.Namespace }} \
+    news-bot-manual-$(date +%s) \
+    --from=cronjob/{{ include "news-bot.fullname" . }}
+
+Logs:
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "news-bot.name" . }} --tail=100

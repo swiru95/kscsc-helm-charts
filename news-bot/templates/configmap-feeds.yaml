@@ -1,0 +1,24 @@
+{{- if not .Values.feeds.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "news-bot.fullname" . }}-feeds
+  labels:
+    {{- include "news-bot.labels" . | nindent 4 }}
+  annotations:
+    {{- if not .Values.feeds.inline }}
+    helm.sh/hook-weight: "-10"
+    {{- end }}
+data:
+  {{- if .Values.feeds.inline }}
+  Feeds.xml: |
+    {{- .Values.feeds.inline | nindent 4 }}
+  {{- else }}
+  Feeds.xml: |
+    <!-- Placeholder — create this ConfigMap manually:
+         kubectl create configmap {{ include "news-bot.fullname" . }}-feeds \
+           --from-file=Feeds.xml=Feeds.xml -n {{ .Release.Namespace }}
+         Then set feeds.existingConfigMap in values.yaml -->
+    <opml version="2.0"><body></body></opml>
+  {{- end }}
+{{- end }}

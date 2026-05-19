@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "news-bot.fullname" . }}-config
+  labels:
+    {{- include "news-bot.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    feeds: []
+
+    settings:
+      max_article_age_hours: {{ .Values.config.maxArticleAgeHours }}
+      output_path: "/data/output/news.json"
+      embedding_model: {{ .Values.config.embeddingModel | quote }}
+      clustering_threshold: {{ .Values.config.clusteringThreshold }}
+      security_only: {{ .Values.config.securityOnly }}
+      web_research: {{ .Values.config.webResearch }}
+      search_max_results: {{ .Values.config.searchMaxResults }}
+      top_n: {{ .Values.config.topN }}
+      validate_sources: {{ .Values.config.validateSources }}
+      incremental: {{ .Values.config.incremental }}
+      state_path: "/data/output/.news_bot_state.json"
+
+      llm:
+        provider: "ollama"
+        model: {{ .Values.ollama.model | quote }}
+        api_url: {{ .Values.ollama.apiUrl | quote }}
+        tls_verify: {{ .Values.ollama.tlsVerify }}
+        max_retries: {{ .Values.ollama.maxRetries }}
+        timeout: {{ .Values.ollama.timeout }}
+
+      fetch:
+        timeout: {{ .Values.config.fetch.timeout }}
+        max_articles_per_feed: {{ .Values.config.fetch.maxArticlesPerFeed }}
+
+  OLLAMA_HOST: {{ .Values.ollama.host | quote }}
+  OLLAMA_MODEL: {{ .Values.ollama.model | quote }}
+  OLLAMA_TLS_VERIFY: {{ .Values.ollama.tlsVerify | quote }}
+  LINKEDIN_ORG_NAME: {{ .Values.linkedinOrg.name | quote }}
+  LINKEDIN_ORG_URL: {{ .Values.linkedinOrg.url | quote }}

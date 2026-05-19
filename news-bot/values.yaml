@@ -1,0 +1,110 @@
+# -- Image -------------------------------------------------------------------
+image:
+  repository: xx
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# -- News-bot pipeline -------------------------------------------------------
+newsbot:
+  schedule: "0 7 * * 1-5"
+  timeZone: "Europe/Warsaw"
+  backoffLimit: 2
+  activeDeadlineSeconds: 1800
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+  extraArgs: []
+  extraEnv: []
+
+# -- LinkedIn feeder ---------------------------------------------------------
+linkedin:
+  enabled: true
+  schedule: "0 9 * * 1-5"
+  timeZone: "Europe/Warsaw"
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  extraArgs: []
+
+# -- Pipeline config ---------------------------------------------------------
+config:
+  maxArticleAgeHours: 24
+  embeddingModel: "all-MiniLM-L6-v2"
+  clusteringThreshold: 0.3
+  securityOnly: true
+  webResearch: true
+  searchMaxResults: 5
+  topN: 10
+  validateSources: true
+  incremental: true
+  fetch:
+    timeout: 15
+    maxArticlesPerFeed: 50
+
+# -- LLM backend -------------------------------------------------------------
+ollama:
+  host: "https://ollama.kscsc.local"
+  model: "qwen2.5:14b"
+  apiUrl: "https://ollama.kscsc.local/v1/chat/completions"
+  tlsVerify: false
+  maxRetries: 3
+  timeout: 300
+
+# -- LinkedIn org metadata ---------------------------------------------------
+linkedinOrg:
+  name: ""
+  url: ""
+
+# -- Feeds (OPML) ------------------------------------------------------------
+feeds:
+  inline: ""
+  existingConfigMap: ""
+
+# -- Secrets -----------------------------------------------------------------
+secrets:
+  create: true
+  existingSecret: ""
+  linkedin:
+    clientId: ""
+    clientSecret: ""
+    orgUrn: ""
+    orgToken: ""
+    orgRefreshToken: ""
+    personalToken: ""
+    personalRefreshToken: ""
+
+# -- Persistence -------------------------------------------------------------
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: ""
+  existingClaim: ""
+
+# -- Common ------------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podLabels:
+  app: news-bot
+
+podAnnotations: {}

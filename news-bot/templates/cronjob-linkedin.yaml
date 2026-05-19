@@ -1,0 +1,125 @@
+{{- if .Values.linkedin.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "news-bot.fullname" . }}-linkedin
+  labels:
+    {{- include "news-bot.labels" . | nindent 4 }}
+    {{- include "news-bot.linkedinSelectorLabels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.linkedin.schedule | quote }}
+  {{- if .Values.linkedin.timeZone }}
+  timeZone: {{ .Values.linkedin.timeZone | quote }}
+  {{- end }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.linkedin.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.linkedin.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "news-bot.linkedinSelectorLabels" . | nindent 12 }}
+            {{- with .Values.podLabels }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          automountServiceAccountToken: false
+          containers:
+            - name: linkedin-feeder
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              command: ["linkedin-feeder"]
+              args:
+                - "--news=/data/output/NEWS.md"
+                - "--no-verify-tls"
+                {{- range .Values.linkedin.extraArgs }}
+                - {{ . | quote }}
+                {{- end }}
+              env:
+                - name: LINKEDIN_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-client-id
+                - name: LINKEDIN_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-client-secret
+                - name: LINKEDIN_ORG_URN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-org-urn
+                - name: LINKEDIN_ORG_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-org-token
+                - name: LINKEDIN_ORG_REFRESH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-org-refresh-token
+                      optional: true
+                - name: LINKEDIN_PERSONAL_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-personal-token
+                      optional: true
+                - name: LINKEDIN_PERSONAL_REFRESH_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: linkedin-personal-refresh-token
+                      optional: true
+                - name: LINKEDIN_TOKEN_CACHE_PATH
+                  value: "/data/output/.linkedin_tokens.json"
+              envFrom:
+                - configMapRef:
+                    name: {{ include "news-bot.fullname" . }}-config
+              resources:
+                {{- toYaml .Values.linkedin.resources | nindent 16 }}
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
+            - name: data
+              {{- if .Values.persistence.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "news-bot.pvcName" . }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+          {{- include "news-bot.scheduling" . | nindent 10 }}
+{{- end }}
