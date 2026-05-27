@@ -14,7 +14,7 @@ This chart lives in the infrastructure repository. The application image and sou
 ┌──────────────┐         │  ┌──────────────────┐       ┌────────────────────────┐  │
 │   Ollama     │◄────────┼──┤  CronJob         │       │  CronJob               │  │
 │   Server     │         │  │  news-bot        │       │  linkedin-feeder       │  │
-│ (external)   │◄────────┼──┤  07:00 M-F       │       │  07:30 M-F             │  │
+│ (external)   │◄────────┼──┤  14:00 M-F       │       │  16:00 M-F             │  │
 └──────────────┘         │  │                  │       │                        │  │
                          │  │  1. Fetch RSS    │       │  1. Read NEWS.md       │  │
                          │  │  2. Dedup+Embed  │       │  2. Summarize (Ollama) │  │
@@ -76,6 +76,8 @@ docker build -t ghcr.io/swiru95/news-bot:latest .
 
 If your cluster does not pull from GHCR directly, tag and publish or import the image using your existing cluster workflow.
 
+The default chart values assume the cluster should always pull the image on each run (`image.pullPolicy: Always`).
+
 ## Install the chart
 
 ```bash
@@ -106,6 +108,25 @@ kubectl logs -f job/linkedin-test -n news-bot
 ```bash
 helm upgrade news-bot ./news-bot --reuse-values
 ```
+
+Default schedules in this chart:
+
+- `news-bot`: `0 14 * * 1-5`
+- `news-bot-linkedin`: `0 16 * * 1-5`
+
+## Config mapping
+
+The chart renders the application `config.yaml` into a ConfigMap. The main values map directly to the current app schema:
+
+- `config.embeddingModel` -> `settings.embedding_model`
+- `config.dropNonEnglish` -> `settings.drop_non_english`
+- `config.stateRetentionDays` -> `settings.state_retention_days`
+- `ollama.provider` -> `settings.llm.provider`
+- `ollama.authSource` -> `settings.llm.auth_source`
+- `ollama.webSearch` -> `settings.llm.web_search`
+- `ollama.ollamaBaseUrl` -> `settings.llm.ollama_base_url`
+
+Current defaults match the application repository's checked-in config, including the multilingual embedding model and disabled non-English filtering.
 
 To roll out a new image:
 

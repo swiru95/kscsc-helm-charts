@@ -11,10 +11,11 @@ spec:
   timeZone: {{ .Values.newsbot.timeZone | quote }}
   {{- end }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 5
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: {{ .Values.newsbot.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.newsbot.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
+      ttlSecondsAfterFinished: {{ .Values.newsbot.ttlSecondsAfterFinished }}
       backoffLimit: {{ .Values.newsbot.backoffLimit }}
       activeDeadlineSeconds: {{ .Values.newsbot.activeDeadlineSeconds }}
       template:

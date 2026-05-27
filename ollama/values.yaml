@@ -72,7 +72,7 @@ gateway:
   serviceName: ollama-ollama
   servicePort: 11434
   httpDirect: false
-  timeout: 600s
+  timeout: 1200s
 
 networkPolicy:
   enabled: true

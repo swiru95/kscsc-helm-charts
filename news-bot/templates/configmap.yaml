@@ -13,6 +13,7 @@ data:
       output_path: "/data/output/news.json"
       embedding_model: {{ .Values.config.embeddingModel | quote }}
       clustering_threshold: {{ .Values.config.clusteringThreshold }}
+      drop_non_english: {{ .Values.config.dropNonEnglish }}
       security_only: {{ .Values.config.securityOnly }}
       web_research: {{ .Values.config.webResearch }}
       search_max_results: {{ .Values.config.searchMaxResults }}
@@ -20,12 +21,16 @@ data:
       validate_sources: {{ .Values.config.validateSources }}
       incremental: {{ .Values.config.incremental }}
       state_path: "/data/output/.news_bot_state.json"
+      state_retention_days: {{ .Values.config.stateRetentionDays }}
 
       llm:
-        provider: "ollama"
+        provider: {{ .Values.ollama.provider | quote }}
         model: {{ .Values.ollama.model | quote }}
         api_url: {{ .Values.ollama.apiUrl | quote }}
         tls_verify: {{ .Values.ollama.tlsVerify }}
+        auth_source: {{ .Values.ollama.authSource | quote }}
+        web_search: {{ .Values.ollama.webSearch }}
+        ollama_base_url: {{ .Values.ollama.ollamaBaseUrl | quote }}
         max_retries: {{ .Values.ollama.maxRetries }}
         timeout: {{ .Values.ollama.timeout }}
 
@@ -35,6 +40,7 @@ data:
 
   OLLAMA_HOST: {{ .Values.ollama.host | quote }}
   OLLAMA_MODEL: {{ .Values.ollama.model | quote }}
+  OLLAMA_TIMEOUT: {{ .Values.ollama.timeout | quote }}
   OLLAMA_TLS_VERIFY: {{ .Values.ollama.tlsVerify | quote }}
   LINKEDIN_ORG_NAME: {{ .Values.linkedinOrg.name | quote }}
   LINKEDIN_ORG_URL: {{ .Values.linkedinOrg.url | quote }}

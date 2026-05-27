@@ -2,16 +2,19 @@
 image:
   repository: xx
   tag: latest
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets: []
 
 # -- News-bot pipeline -------------------------------------------------------
 newsbot:
-  schedule: "0 7 * * 1-5"
+  schedule: "0 14 * * 1-5"
   timeZone: "Europe/Warsaw"
   backoffLimit: 2
   activeDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  ttlSecondsAfterFinished: 3600
 
   resources:
     requests:
@@ -27,10 +30,13 @@ newsbot:
 # -- LinkedIn feeder ---------------------------------------------------------
 linkedin:
   enabled: true
-  schedule: "0 9 * * 1-5"
+  schedule: "0 16 * * 1-5"
   timeZone: "Europe/Warsaw"
   backoffLimit: 1
-  activeDeadlineSeconds: 300
+  activeDeadlineSeconds: 1200
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  ttlSecondsAfterFinished: 1800
 
   resources:
     requests:
@@ -45,26 +51,32 @@ linkedin:
 # -- Pipeline config ---------------------------------------------------------
 config:
   maxArticleAgeHours: 24
-  embeddingModel: "all-MiniLM-L6-v2"
+  embeddingModel: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
   clusteringThreshold: 0.3
+  dropNonEnglish: false
   securityOnly: true
   webResearch: true
   searchMaxResults: 5
   topN: 10
   validateSources: true
   incremental: true
+  stateRetentionDays: 14
   fetch:
     timeout: 15
     maxArticlesPerFeed: 50
 
 # -- LLM backend -------------------------------------------------------------
 ollama:
+  provider: "ollama"
   host: "https://ollama.kscsc.local"
-  model: "qwen2.5:14b"
+  model: "gpt-oss:20b"
   apiUrl: "https://ollama.kscsc.local/v1/chat/completions"
   tlsVerify: false
+  authSource: "claude_cli"
+  webSearch: false
+  ollamaBaseUrl: "http://localhost:11434"
   maxRetries: 3
-  timeout: 300
+  timeout: 1200
 
 # -- LinkedIn org metadata ---------------------------------------------------
 linkedinOrg:

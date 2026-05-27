@@ -12,10 +12,11 @@ spec:
   timeZone: {{ .Values.linkedin.timeZone | quote }}
   {{- end }}
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 5
-  failedJobsHistoryLimit: 3
+  successfulJobsHistoryLimit: {{ .Values.linkedin.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.linkedin.failedJobsHistoryLimit }}
   jobTemplate:
     spec:
+      ttlSecondsAfterFinished: {{ .Values.linkedin.ttlSecondsAfterFinished }}
       backoffLimit: {{ .Values.linkedin.backoffLimit }}
       activeDeadlineSeconds: {{ .Values.linkedin.activeDeadlineSeconds }}
       template:
