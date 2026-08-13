@@ -2,8 +2,8 @@ apiVersion: v2
 name: news-bot
 description: Cybersecurity news aggregator with LLM-powered clustering and LinkedIn posting
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "2b8ca4b"
 keywords:
   - cybersecurity
   - news

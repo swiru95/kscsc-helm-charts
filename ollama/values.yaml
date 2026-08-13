@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ollama/ollama
-  tag: "0.23.4"
+  tag: "0.30.8"
   pullPolicy: Always
 
 service:
@@ -20,13 +20,17 @@ pvc:
 
 models:
   - SpeakLeash/bielik-11b-v3.0-instruct:Q6_K
-  - DeepHat/DeepHat-V1-7B
+  - gemma4:12b
   - gpt-oss:20b
 
 commandArgs: []
 
 env:
   OLLAMA_KEEP_ALIVE: "3h"
+  # GPU is Blackwell (RTX 5060 Ti, CUDA 13). Pin the CUDA library so ollama's
+  # GPU-discovery probe only tries cuda_v13 instead of also probing cuda_v12 and
+  # blowing the 30s discovery watchdog -> silent CPU-only fallback on restarts.
+  OLLAMA_LLM_LIBRARY: "cuda_v13"
 
 resources:
   requests:

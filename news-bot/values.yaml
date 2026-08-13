@@ -1,17 +1,20 @@
 # -- Image -------------------------------------------------------------------
 image:
-  repository: xx
-  tag: latest
-  pullPolicy: Always
+  repository: ghcr.io/swiru95/news-bot
+  tag: 2b8ca4b13004f3b238d9a84bea4e72e2e873e0a2
+  pullPolicy: IfNotPresent
 
-imagePullSecrets: []
+imagePullSecrets:
+  - name: ghcr-pull-secret
 
 # -- News-bot pipeline -------------------------------------------------------
 newsbot:
   schedule: "0 14 * * 1-5"
   timeZone: "Europe/Warsaw"
   backoffLimit: 2
-  activeDeadlineSeconds: 1800
+  # Full pipeline (web research + LLM refine/summarise for ~50 clusters) on the
+  # GPU-backed 12B model runs well past the old 30m cap; give it headroom.
+  activeDeadlineSeconds: 5400
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   ttlSecondsAfterFinished: 3600
@@ -32,8 +35,11 @@ linkedin:
   enabled: true
   schedule: "0 16 * * 1-5"
   timeZone: "Europe/Warsaw"
+  skipIfUnchanged: true
+  hashFilePath: "/data/output/.linkedin_last_news.sha256"
   backoffLimit: 1
-  activeDeadlineSeconds: 1200
+  # Give the feeder enough room to wait for Ollama and still finish the post.
+  activeDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 1
   ttlSecondsAfterFinished: 1800
@@ -53,30 +59,42 @@ config:
   maxArticleAgeHours: 24
   embeddingModel: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
   clusteringThreshold: 0.3
-  dropNonEnglish: false
+  dropNonEnglish: true
   securityOnly: true
-  webResearch: true
+  webResearch: false
   searchMaxResults: 5
-  topN: 10
-  validateSources: true
-  incremental: true
+  topN: 5
+  validateSources: false
+  incremental: false
   stateRetentionDays: 14
   fetch:
     timeout: 15
-    maxArticlesPerFeed: 50
+    maxArticlesPerFeed: 20
 
 # -- LLM backend -------------------------------------------------------------
+# Backend is llama-server (llama.cpp) at llama.kscsc.local:8080. Both the main
+# news-bot pipeline and the linkedin-feeder CronJob use the same OpenAI-compatible
+# endpoint (/v1/chat/completions) with an Authorization header for authentication.
 ollama:
   provider: "ollama"
-  host: "https://ollama.kscsc.local"
-  model: "gpt-oss:20b"
-  apiUrl: "https://ollama.kscsc.local/v1/chat/completions"
+  model: "Qwen/Qwen3-32B-GGUF:Q4_K_M"
+  apiUrl: "http://llama.kscsc.local:8080/v1/chat/completions"
+  # Full Authorization header value, e.g. "Bearer <key>". llama-server runs with
+  # --api-key-file and rejects unauthenticated calls with 401. Supply at deploy
+  # time (--set ollama.authHeader=...); keep empty in git. Also written to the
+  # Secret as authSecretKey when secrets.create is true.
+  authHeader: ""
   tlsVerify: false
   authSource: "claude_cli"
   webSearch: false
   ollamaBaseUrl: "http://localhost:11434"
-  maxRetries: 3
-  timeout: 1200
+  maxRetries: 1
+  # LinkedIn generation and source summarization can take longer on the in-cluster model.
+  timeout: 600
+  # Key inside the existing Secret (secrets.existingSecret) that holds the full
+  # Authorization header for the LinkedIn feeder; mounted as LLM_AUTH_HEADER.
+  # The env var is optional, so the chart still renders if the key is absent.
+  authSecretKey: "llm-auth-header"
 
 # -- LinkedIn org metadata ---------------------------------------------------
 linkedinOrg:
@@ -86,12 +104,12 @@ linkedinOrg:
 # -- Feeds (OPML) ------------------------------------------------------------
 feeds:
   inline: ""
-  existingConfigMap: ""
+  existingConfigMap: "news-bot-feeds"
 
 # -- Secrets -----------------------------------------------------------------
 secrets:
-  create: true
-  existingSecret: ""
+  create: false
+  existingSecret: "news-bot-secrets"
   linkedin:
     clientId: ""
     clientSecret: ""
@@ -113,7 +131,10 @@ nameOverride: ""
 fullnameOverride: ""
 
 nodeSelector: {}
-tolerations: []
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
 affinity: {}
 
 podLabels:

@@ -54,6 +54,18 @@ spec:
 {{ toYaml .Values.podSecurityContext | indent 8 }}
       {{- end }}
       initContainers:
+        {{- if .Values.gpu.enabled }}
+        # Warm the NVIDIA driver/CUDA before ollama starts. On a cold boot the
+        # first CUDA init is slow enough to trip ollama's 30s GPU-discovery
+        # watchdog, causing a silent CPU-only fallback for the pod's lifetime.
+        # This init container blocks ollama until the GPU is initialised.
+        - name: gpu-warmup
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ['sh', '-c', 'nvidia-smi -L && nvidia-smi']
+          resources:
+            limits:
+              {{ .Values.gpu.resourceName }}: {{ .Values.gpu.count }}
+        {{- end }}
         - name: init-ollama-home
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           command: ['mkdir', '-p', '/root/.ollama']

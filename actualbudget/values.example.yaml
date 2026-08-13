@@ -1,0 +1,57 @@
+# Example values - real deployment values live in the private config/ submodule.
+# Credential fields are blanked; supply them at deploy time.
+
+files:
+  dataDirectory: /data
+  server: /data/server-files
+  user: /data/user-files
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: kscsc-ca-issuer
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+  className: nginx
+  enabled: true
+  hosts:
+  - host: actualbudget.kscsc.local
+    paths:
+    - path: /
+      pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - actualbudget.kscsc.local
+    secretName: ''
+login:
+  allowedLoginMethods:
+  - openid
+  method: openid
+  openid:
+    authMethod: openid
+    clientId: ''
+    clientSecret: ''
+    discoveryUrl: https://login.microsoftonline.com/<AZURE_TENANT_ID>/v2.0/.well-known/openid-configuration
+    enforce: true
+    providerName: KSCSC Entra
+    tokenExpiration: 3600
+  skipSSLVerification: true
+persistence:
+  accessModes:
+  - ReadWriteOnce
+  enabled: true
+  existingClaim: ''
+  size: 20Gi
+  storageClass: ''
+replicaCount: 1
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 200m
+    memory: 512Mi
+strategy:
+  type: Recreate
+tolerations:
+- effect: NoSchedule
+  key: nvidia.com/gpu
+  operator: Exists

@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/open-webui/open-webui
-  tag: "v0.9.5"
+  tag: "v0.9.6"
   pullPolicy: Always
 
 service:
@@ -23,8 +23,26 @@ gateway:
   httpDirect: false
   timeout: 60s
 
+# --- LLM backends ---
+# The in-cluster Ollama release was removed; the backend is now llama-server
+# (llama.cpp) on llama.kscsc.local, which serves the OpenAI-compatible API only.
 ollama:
-  baseUrl: "http://ollama-ollama.ollama.svc.cluster.local:11434"
+  enabled: false
+  baseUrl: ""
+
+openai:
+  enabled: true
+  # llama.cpp router; note port 8080 and the /v1 suffix
+  baseUrl: "http://llama.kscsc.local:8080/v1"
+  # llama-server runs with --api-key-file, so a key is REQUIRED.
+  # Prefer a Secret; apiKey below is a plaintext fallback for quick testing.
+  apiKeySecretName: "openui-llm-api-key"
+  apiKeyKey: "api-key"
+  apiKey: ""
+
+# -- Let Open WebUI persist config in its DB. Set false so the backend settings
+# above are authoritative on every restart rather than only seeding first boot.
+persistentConfig: false
 
 resources: {}
 

@@ -21,8 +21,34 @@ spec:
           ports:
             - containerPort: {{ .Values.service.port }}
           env:
+            # Env vars below are PersistentConfig in Open WebUI: with a PVC they
+            # only seed the DB on first run unless persistence is turned off.
+            - name: ENABLE_PERSISTENT_CONFIG
+              value: "{{ .Values.persistentConfig }}"
+
+            # --- LLM backends ---
+            - name: ENABLE_OLLAMA_API
+              value: "{{ .Values.ollama.enabled }}"
+{{- if .Values.ollama.enabled }}
             - name: OLLAMA_BASE_URL
               value: "{{ .Values.ollama.baseUrl }}"
+{{- end }}
+            - name: ENABLE_OPENAI_API
+              value: "{{ .Values.openai.enabled }}"
+{{- if .Values.openai.enabled }}
+            - name: OPENAI_API_BASE_URL
+              value: "{{ .Values.openai.baseUrl }}"
+{{- if .Values.openai.apiKeySecretName }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.openai.apiKeySecretName }}"
+                  key: "{{ .Values.openai.apiKeyKey | default "api-key" }}"
+{{- else }}
+            - name: OPENAI_API_KEY
+              value: "{{ .Values.openai.apiKey }}"
+{{- end }}
+{{- end }}
 
             # --- OIDC Configuration ---
 {{- if .Values.oidc.enabled }}

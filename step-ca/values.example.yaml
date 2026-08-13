@@ -1,0 +1,156 @@
+# Example values - real deployment values live in the private config/ submodule.
+# Credential fields are blanked; supply them at deploy time.
+
+affinity: {}
+autocert:
+  enabled: false
+backendTLS:
+  enabled: true
+  hostname: step-ca-step-certificates.step-ca.svc.cluster.local
+bootstrap:
+  configmaps: false
+  enabled: false
+  secrets: false
+ca:
+  address: :9000
+  db:
+    accessModes:
+    - ReadWriteOnce
+    enabled: true
+    persistent: true
+    size: 10Gi
+    storageClass: ''
+  dns: ca.kscsc.local,step-ca-step-certificates.step-ca.svc.cluster.local,127.0.0.1
+  name: KSCSC Certificate Authority
+  provisioner:
+    name: admin
+  ssh:
+    enabled: false
+gateway:
+  hostname: ca.kscsc.local
+  httpDirect: false
+  httpListenerName: http
+  httpsListenerName: https
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  serviceName: step-ca-step-certificates
+  servicePort: 443
+  timeout: 30s
+image:
+  pullPolicy: IfNotPresent
+  repository: cr.smallstep.com/smallstep/step-ca
+  tag: ''
+ingress:
+  enabled: false
+inject:
+  certificates:
+    intermediate_ca: '-----BEGIN CERTIFICATE-----
+
+      REPLACE_WITH_YOUR_INTERMEDIATE_CA_CERTIFICATE
+
+      -----END CERTIFICATE-----
+
+      '
+    root_ca: '-----BEGIN CERTIFICATE-----
+
+      REPLACE_WITH_YOUR_ROOT_CA_CERTIFICATE
+
+      -----END CERTIFICATE-----
+
+      '
+  config:
+    files:
+      ca.json:
+        address: 0.0.0.0:9000
+        authority:
+          claims:
+            defaultTLSCertDuration: 720h
+            disableRenewal: false
+            maxTLSCertDuration: 2160h
+            minTLSCertDuration: 5m
+          provisioners:
+          - claims:
+              defaultTLSCertDuration: 720h
+              maxTLSCertDuration: 2160h
+            forceCN: true
+            name: acme
+            type: ACME
+          - encryptedKey: ''
+            key:
+              alg: ES384
+              crv: P-384
+              kid: REPLACE_WITH_KID
+              kty: EC
+              'true': REPLACE_WITH_Y
+              use: sig
+              x: REPLACE_WITH_X
+            name: admin
+            type: JWK
+        crt: /home/step/certs/intermediate_ca.crt
+        db:
+          dataSource: /home/step/db
+          type: badger
+        dnsNames:
+        - ca.kscsc.local
+        - step-ca-step-certificates.step-ca.svc.cluster.local
+        - 127.0.0.1
+        federateRoots: []
+        key: /home/step/secrets/intermediate_ca_key
+        logger:
+          format: json
+        root: /home/step/certs/root_ca.crt
+        tls:
+          cipherSuites:
+          - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+          - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+          - TLS_AES_128_GCM_SHA256
+          maxVersion: 1.3
+          minVersion: 1.2
+          renegotiation: false
+      defaults.json:
+        ca-config: /home/step/config/ca.json
+        ca-url: https://ca.kscsc.local
+        fingerprint: REPLACE_WITH_ROOT_CA_FINGERPRINT
+        root: /home/step/certs/root_ca.crt
+    templates:
+      ssh.tpl: "{\n  \"type\": {{ toJson .Type }},\n  \"keyId\": {{ toJson .KeyID\
+        \ }},\n  \"principals\": {{ toJson .Principals }},\n  \"extensions\": {{ toJson\
+        \ .Extensions }},\n  \"criticalOptions\": {{ toJson .CriticalOptions }}\n\
+        }\n"
+      x509_leaf.tpl: "{\n  \"subject\": {{ toJson .Subject }},\n  \"sans\": {{ toJson\
+        \ .SANs }},\n{{- if typeIs \"*rsa.PublicKey\" .Insecure.CR.PublicKey }}\n\
+        \  \"keyUsage\": [\"keyEncipherment\", \"digitalSignature\"],\n{{- else }}\n\
+        \  \"keyUsage\": [\"digitalSignature\"],\n{{- end }}\n  \"extKeyUsage\": [\"\
+        serverAuth\", \"clientAuth\"]\n}\n"
+  enabled: true
+  secrets:
+    ca_password: ''
+    provisioner_password: ''
+    ssh:
+      enabled: false
+    x509:
+      enabled: true
+      intermediate_ca_key: '-----BEGIN EC PRIVATE KEY-----
+
+        REPLACE_WITH_YOUR_ENCRYPTED_INTERMEDIATE_CA_KEY
+
+        -----END EC PRIVATE KEY-----
+
+        '
+      root_ca_key: ''
+kind: StatefulSet
+nodeSelector: {}
+replicaCount: 1
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+service:
+  annotations: {}
+  port: 443
+  targetPort: 9000
+  type: ClusterIP
+tolerations: []

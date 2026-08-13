@@ -53,13 +53,44 @@ spec:
                 readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
+              {{- if .Values.linkedin.skipIfUnchanged }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  NEWS_FILE="/data/output/NEWS.md"
+                  NEWS_JSON="/data/output/news.json"
+                  HASH_FILE="{{ .Values.linkedin.hashFilePath }}"
+
+                  if [ ! -s "$NEWS_FILE" ]; then
+                    echo "No NEWS.md content found, skipping LinkedIn posting."
+                    exit 0
+                  fi
+
+                  NEW_HASH="$(sha256sum "$NEWS_FILE" | awk '{print $1}')"
+                  if [ -f "$HASH_FILE" ] && [ "$(cat "$HASH_FILE")" = "$NEW_HASH" ]; then
+                    echo "NEWS.md unchanged since last successful post, skipping."
+                    exit 0
+                  fi
+
+                  linkedin-feeder --news="$NEWS_FILE" --post-json="$NEWS_JSON" --no-verify-tls{{- range .Values.linkedin.extraArgs }} {{ . | quote }}{{- end }}
+                  EXIT_CODE=$?
+
+                  if [ "$EXIT_CODE" -eq 0 ]; then
+                    echo "$NEW_HASH" > "$HASH_FILE"
+                  fi
+
+                  exit "$EXIT_CODE"
+              {{- else }}
               command: ["linkedin-feeder"]
               args:
                 - "--news=/data/output/NEWS.md"
+                - "--post-json=/data/output/news.json"
                 - "--no-verify-tls"
                 {{- range .Values.linkedin.extraArgs }}
                 - {{ . | quote }}
                 {{- end }}
+              {{- end }}
               env:
                 - name: LINKEDIN_CLIENT_ID
                   valueFrom:
@@ -101,6 +132,12 @@ spec:
                       optional: true
                 - name: LINKEDIN_TOKEN_CACHE_PATH
                   value: "/data/output/.linkedin_tokens.json"
+                - name: LLM_AUTH_HEADER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: {{ .Values.ollama.authSecretKey }}
+                      optional: true
               envFrom:
                 - configMapRef:
                     name: {{ include "news-bot.fullname" . }}-config

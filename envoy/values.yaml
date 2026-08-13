@@ -56,9 +56,10 @@ httproute:
 tcproute:
   name: envoy-tcproute
 
-# Static IP assigned by MetalLB to the Envoy Gateway LoadBalancer service
+# Static IP assigned by MetalLB to the Envoy Gateway LoadBalancer service.
+# Must fall inside the MetalLB pool 'first-pool' (192.168.95.50-192.168.95.60).
 service:
-  loadBalancerIP: "x"
+  loadBalancerIP: "192.168.95.51"
 
 # envoyproxy/gateway-helm chart tolerations (single-node cluster with GPU taint)
 deployment:

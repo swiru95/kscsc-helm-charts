@@ -1,0 +1,83 @@
+# Example values - real deployment values live in the private config/ submodule.
+# Credential fields are blanked; supply them at deploy time.
+
+certgen:
+  job:
+    tolerations:
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
+certificate:
+  dnsNames:
+  - actualbudget.kscsc.local
+  - ollama.kscsc.local
+  - openui.kscsc.local
+  - ca.kscsc.local
+  enabled: true
+  issuerRef:
+    kind: ClusterIssuer
+    name: kscsc-ca-issuer
+  name: envoy-gateway-tls
+  secretName: ''
+controller:
+  enabled: true
+  image:
+    pullPolicy: IfNotPresent
+    repository: envoyproxy/envoy-gateway
+    tag: main
+  replicaCount: 1
+coraza:
+  enabled: false
+dataPlane:
+  enabled: false
+  image:
+    pullPolicy: IfNotPresent
+    repository: envoyproxy/envoy
+    tag: v1.29-latest
+  managed: true
+  replicaCount: 1
+  service:
+    port: 10000
+    type: ClusterIP
+deployment:
+  pod:
+    tolerations:
+    - effect: NoSchedule
+      key: nvidia.com/gpu
+      operator: Exists
+gateway:
+  className: envoy-gateway-class
+  listeners:
+  - allowedRoutes:
+      namespaces:
+        from: All
+    name: http
+    port: 80
+    protocol: HTTP
+  - allowedRoutes:
+      namespaces:
+        from: All
+    name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      certificateRefs:
+      - name: envoy-gateway-tls
+      mode: Terminate
+  - allowedRoutes:
+      namespaces:
+        from: All
+    name: tcp
+    port: 9997
+    protocol: TCP
+  name: envoy-gateway
+gatewayClass:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  create: true
+  name: envoy-gateway-class
+httproute:
+  name: envoy-httproute
+service:
+  loadBalancerIP: 192.168.95.51
+tcproute:
+  name: envoy-tcproute

@@ -9,13 +9,12 @@ data:
   {{ .Values.zone | replace "." "-" }}.server: |
     {{ .Values.zone }}:53 {
       hosts {
-        {{- range .Values.hosts.nginx }}
-        {{ $.Values.ingressIP }} {{ . }}
-        {{- end }}
         {{- range .Values.hosts.envoy }}
         {{ $.Values.envoyIP }} {{ . }}
         {{- end }}
+        {{- range .Values.hosts.static }}
+        {{ .ip }} {{ .name }}
+        {{- end }}
         fallthrough
       }
-      whoami
     }

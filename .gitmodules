@@ -1,3 +1,6 @@
 [submodule "n8n-hosting"]
 	path = n8n-hosting
 	url = https://github.com/swiru95/n8n-hosting.git
+[submodule "config"]
+	path = config
+	url = https://github.com/swiru95/kscsc-cluster-config.git

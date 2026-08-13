@@ -76,9 +76,11 @@ inject:
                 kid: "REPLACE_WITH_KID"
                 crv: P-384
                 alg: ES384
-                # x, y values will be populated when you generate the provisioner key
+                # x, y values will be populated when you generate the provisioner key.
+                # "y" MUST stay quoted: Helm's YAML parser resolves a bare y key to the
+                # boolean true, which silently renames the coordinate and breaks the JWK.
                 x: "REPLACE_WITH_X"
-                y: "REPLACE_WITH_Y"
+                "y": "REPLACE_WITH_Y"
         tls:
           cipherSuites:
             - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305

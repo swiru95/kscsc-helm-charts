@@ -1,0 +1,78 @@
+# Example values - real deployment values live in the private config/ submodule.
+# Credential fields are blanked; supply them at deploy time.
+
+affinity: {}
+extraEnv:
+- name: WEBUI_URL
+  value: https://openui.kscsc.local
+- name: ENABLE_LOGIN_FORM
+  value: 'false'
+- name: ENABLE_SIGNUP
+  value: 'false'
+- name: ENABLE_OAUTH_SIGNUP
+  value: 'true'
+- name: OAUTH_ROLES_CLAIM
+  value: roles
+- name: OAUTH_ADMIN_ROLES
+  value: Admin
+gateway:
+  hostname: openui.kscsc.local
+  httpDirect: false
+  httpListenerName: http
+  httpsListenerName: https
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  serviceName: openui-openui
+  servicePort: 8080
+  timeout: 60s
+image:
+  pullPolicy: Always
+  repository: ghcr.io/open-webui/open-webui
+  tag: v0.9.6
+ingress:
+  enabled: false
+networkPolicy:
+  allow: []
+  enabled: true
+  ingress:
+    enabled: true
+    namespace: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: envoy
+nodeSelector: {}
+oidc:
+  clientID: ''
+  clientSecret: ''
+  enabled: true
+  issuer: https://login.microsoftonline.com/<AZURE_TENANT_ID>/v2.0/.well-known/openid-configuration
+  redirectURI: https://openui.kscsc.local/oauth/oidc/callback
+  scopes:
+  - openid
+  - profile
+  - email
+ollama:
+  baseUrl: ''
+  enabled: false
+openai:
+  apiKey: ''
+  apiKeyKey: ''
+  apiKeySecretName: ''
+  baseUrl: http://llama.kscsc.local:8080/v1
+  enabled: true
+persistentConfig: false
+pvc:
+  accessModes:
+  - ReadWriteOnce
+  enabled: true
+  name: ''
+  size: 5Gi
+  storageClass: ''
+replicaCount: 1
+resources: {}
+service:
+  port: 8080
+  type: ClusterIP
+tolerations:
+- effect: NoSchedule
+  key: nvidia.com/gpu
+  operator: Exists

@@ -7,21 +7,24 @@
 # ---------------------------------------------------------------------------
 zone: kscsc.local
 
-# -- ClusterIP of the nginx ingress controller
-ingressIP: ""
-# -- ClusterIP of the Envoy Gateway LoadBalancer service
-envoyIP: ""
+# -- MetalLB address of the Envoy Gateway LoadBalancer service.
+# Must be the LoadBalancer IP (see envoy/values.yaml service.loadBalancerIP), not the
+# ClusterIP: the ClusterIP is reassigned whenever the Service is recreated, which silently
+# breaks resolution after a rebuild.
+envoyIP: "192.168.95.51"
 
-# -- Host entries split by ingress controller
+# -- Host entries served from the zone
 hosts:
-  nginx: []
   envoy:
     - actualbudget.kscsc.local
-    - ollama.kscsc.local
     - openui.kscsc.local
     - ca.kscsc.local
     - splunk.kscsc.local
     - auth.kscsc.local
+  # -- Entries pinned to an explicit IP (hosts outside the cluster)
+  static:
+    - ip: 192.168.95.201
+      name: llama.kscsc.local
 
 # ---------------------------------------------------------------------------
 # CoreDNS Deployment patch (GPU toleration)

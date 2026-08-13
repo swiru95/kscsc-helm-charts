@@ -52,10 +52,18 @@ spec:
                 readOnlyRootFilesystem: true
                 capabilities:
                   drop: ["ALL"]
-              {{- with .Values.newsbot.extraEnv }}
               env:
+                # Allows the operator to migrate the API key out of the ConfigMap;
+                # the app prefers this env var over the auth_header value in config.yaml.
+                - name: LLM_AUTH_HEADER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: {{ .Values.ollama.authSecretKey }}
+                      optional: true
+                {{- with .Values.newsbot.extraEnv }}
                 {{- toYaml . | nindent 16 }}
-              {{- end }}
+                {{- end }}
               args:
                 - "--config=/config/config.yaml"
                 - "--opml=/config/Feeds.xml"

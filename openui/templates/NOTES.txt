@@ -1,9 +1,20 @@
 Thank you for installing {{ .Chart.Name }}!
 
-OpenUI is now deployed and connected to Ollama at {{ .Values.ollama.baseUrl }}.
+OpenUI is deployed and connected to:
+{{- if .Values.openai.enabled }}
+  - OpenAI-compatible API: {{ .Values.openai.baseUrl }}
+{{- if .Values.openai.apiKeySecretName }}
+    API key from secret "{{ .Values.openai.apiKeySecretName }}" (key: {{ .Values.openai.apiKeyKey | default "api-key" }})
+{{- else if not .Values.openai.apiKey }}
+    WARNING: no API key set - llama-server will reject requests with 401.
+{{- end }}
+{{- end }}
+{{- if .Values.ollama.enabled }}
+  - Ollama: {{ .Values.ollama.baseUrl }}
+{{- end }}
 
 To access the web UI:
 - Via ingress: http://openui.local (add to /etc/hosts: 127.0.0.1 openui.local)
 - Or port-forward: kubectl port-forward deploy/{{ include "openui.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }} -n {{ .Release.Namespace }}
 
-Ensure Ollama has models pulled for the UI to work.
+Ensure the backend has models loaded for the UI to work.

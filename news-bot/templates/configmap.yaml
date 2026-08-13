@@ -27,6 +27,9 @@ data:
         provider: {{ .Values.ollama.provider | quote }}
         model: {{ .Values.ollama.model | quote }}
         api_url: {{ .Values.ollama.apiUrl | quote }}
+        {{- if .Values.ollama.authHeader }}
+        auth_header: {{ .Values.ollama.authHeader | quote }}
+        {{- end }}
         tls_verify: {{ .Values.ollama.tlsVerify }}
         auth_source: {{ .Values.ollama.authSource | quote }}
         web_search: {{ .Values.ollama.webSearch }}
@@ -38,9 +41,10 @@ data:
         timeout: {{ .Values.config.fetch.timeout }}
         max_articles_per_feed: {{ .Values.config.fetch.maxArticlesPerFeed }}
 
-  OLLAMA_HOST: {{ .Values.ollama.host | quote }}
-  OLLAMA_MODEL: {{ .Values.ollama.model | quote }}
-  OLLAMA_TIMEOUT: {{ .Values.ollama.timeout | quote }}
-  OLLAMA_TLS_VERIFY: {{ .Values.ollama.tlsVerify | quote }}
+  # Environment variables for the linkedin-feeder CronJob; the API key is NOT here — it comes from the Secret.
+  LLM_API_URL: {{ .Values.ollama.apiUrl | quote }}
+  LLM_MODEL: {{ .Values.ollama.model | quote }}
+  LLM_TIMEOUT: {{ .Values.ollama.timeout | quote }}
+  LLM_TLS_VERIFY: {{ .Values.ollama.tlsVerify | quote }}
   LINKEDIN_ORG_NAME: {{ .Values.linkedinOrg.name | quote }}
   LINKEDIN_ORG_URL: {{ .Values.linkedinOrg.url | quote }}

@@ -1,6 +1,6 @@
 # CoreDNS Custom — In-Cluster DNS for kscsc.local
 
-Creates the K3s `coredns-custom` ConfigMap so that `*.kscsc.local` resolves to the **nginx ingress controller's ClusterIP** inside the cluster. This keeps all traffic (including ACME HTTP-01 challenges) entirely in-cluster.
+Creates the K3s `coredns-custom` ConfigMap so that `*.kscsc.local` resolves to the **Envoy Gateway's MetalLB address** inside the cluster. This keeps all traffic (including ACME HTTP-01 challenges) on the cluster's own ingress path.
 
 Optionally reconciles the CoreDNS Deployment so the GPU toleration is restored after k3s re-applies its built-in CoreDNS addon on host restart.
 
@@ -19,7 +19,7 @@ This chart creates a `kscsc-local.server` entry — a dedicated server block for
 ## Prerequisites
 
 - K3s (CoreDNS configured to import `/etc/coredns/custom/*.server`)
-- nginx ingress controller deployed
+- Envoy Gateway deployed, with a MetalLB address assigned
 
 ## Quick Start
 
@@ -30,12 +30,18 @@ helm install coredns-custom . -n kube-system
 
 ## Adding a new host
 
-Add the hostname to the `hosts` list in `values.yaml`:
+Add the hostname under the matching key in `values.yaml`. `envoy` entries
+resolve to `envoyIP`; `static` entries carry their own IP
+and are for hosts that live outside the cluster:
 
 ```yaml
 hosts:
-  - ca.kscsc.local
-  - myapp.kscsc.local    # <-- new
+  envoy:
+    - ca.kscsc.local
+    - myapp.kscsc.local        # <-- new, via Envoy Gateway
+  static:
+    - ip: 192.168.95.201
+      name: llama.kscsc.local  # <-- new, external host
 ```
 
 Then upgrade:
@@ -51,8 +57,9 @@ The reconcile CronJob will keep the toleration in place even after the host or k
 | Parameter | Description | Default |
 |---|---|---|
 | `zone` | DNS zone for the server block | `kscsc.local` |
-| `ingressIP` | ClusterIP of the ingress controller | `10.43.79.66` |
-| `hosts` | List of hostnames to resolve | See values.yaml |
+| `envoyIP` | MetalLB address of the Envoy Gateway service | `192.168.95.51` |
+| `hosts.envoy` | Hostnames resolving to `envoyIP` | See values.yaml |
+| `hosts.static` | `{ip, name}` pairs for hosts outside the cluster | See values.yaml |
 | `patch.enabled` | Run a CronJob to restore the GPU toleration when k3s overwrites CoreDNS | `true` |
 | `patch.schedule` | How often the reconcile job checks CoreDNS | `*/2 * * * *` |
 | `patch.image.*` | Container image used by the reconcile job | `bitnami/kubectl:latest` |
@@ -63,7 +70,7 @@ The reconcile CronJob will keep the toleration in place even after the host or k
 ## Finding the ingress ClusterIP
 
 ```bash
-kubectl -n ingress-nginx get svc ingress-nginx-controller -o jsonpath='{.spec.clusterIP}'
+kubectl -n envoy-gateway-system get svc -l gateway.envoyproxy.io/owning-gateway-name=envoy-gateway -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}'
 ```
 
 ## Uninstalling
