@@ -131,8 +131,10 @@ spec:
             # Envoy again, the request would loop indefinitely.
             - name: NGINX_ENABLE_HTTP
               value: "{{ .Values.nginx.enableHttp }}"
+            {{- if .Values.nginx.enableHttpRedirect }}
             - name: NGINX_ENABLE_HTTP_REDIRECT
               value: "{{ .Values.nginx.enableHttpRedirect }}"
+            {{- end }}
             # Default is 9392, which is also gsad's port. Harmless across two
             # compose containers, a bind conflict inside one pod.
             - name: NGINX_HTTP_PORT
@@ -169,6 +171,72 @@ spec:
               mountPath: /mnt
             - name: openvas-log
               mountPath: /var/log/openvas
+
+        # Same story as pg-gvm-seed below, for a different volume. The gvmd image
+        # ships /var/lib/gvm/gvmd (mode 755, owned by uid 1001), and gvmd puts its
+        # lock files there — gvm-checking, gvm-create-functions. Our empty PVC
+        # masks that directory, so gvmd starts, connects to Postgres fine, then
+        # dies on "Error trying to get checking lock".
+        #
+        # Only /var/lib/gvm itself is seeded. scap-data, cert-data and
+        # data-objects are separate volumes mounted at nested paths on top of it,
+        # and each is populated by its own init container above.
+        - name: gvmd-seed
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gvmd" "tag" .Values.image.tags.gvmd) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              if [ -d /seed/gvmd ]; then
+                echo "gvmd state directory already present; leaving it alone."
+              else
+                echo "Empty volume; seeding /var/lib/gvm from the image."
+                # -a keeps uid/gid 1001, which gvmd drops to before taking locks.
+                cp -a /var/lib/gvm/. /seed/
+              fi
+          volumeMounts:
+            - name: gvmd-data
+              mountPath: /seed
+
+        # The pg-gvm image ships an ALREADY INITIALISED cluster at
+        # /var/lib/postgresql/17/main (~39MB, PG_VERSION=17). Upstream's compose
+        # mounts a named volume over that path, and Docker pre-populates an empty
+        # named volume from the image — so the initialised cluster lands on the
+        # volume for free. Kubernetes PVCs do NOT do that: our volume mounts empty
+        # and simply masks the image's copy.
+        #
+        # start-postgresql then does `EXISTING="$(detect_existing_major)"` under
+        # `set -eu`. On an empty volume that function returns 1, the assignment
+        # inherits that status, and set -e kills the script — exit 1 with zero
+        # log output. It never reaches its own initdb path, because the image
+        # also ships /etc/postgresql/17/main, so pg_createcluster is skipped too.
+        #
+        # So do by hand what Docker does implicitly: seed the volume from the
+        # image when, and only when, it holds no cluster. Must run BEFORE
+        # pg-gvm-migrator, which expects a populated data directory.
+        - name: pg-gvm-seed
+          image: {{ include "openvas.image" (dict "root" $ "repo" "pg-gvm" "tag" .Values.image.tags.pgGvm) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # Mounted at /seed, NOT /var/lib/postgresql, so the image's own
+              # copy stays visible as the source to copy from.
+              if ls /seed/*/main/PG_VERSION >/dev/null 2>&1; then
+                echo "PGDATA already present on the volume; leaving it alone."
+              else
+                echo "No cluster on the volume; seeding from the image."
+                # -a preserves the 0700 postgres:postgres mode on the data
+                # directory, which Postgres refuses to start without.
+                cp -a /var/lib/postgresql/. /seed/
+              fi
+          volumeMounts:
+            - name: psql-data
+              mountPath: /seed
 
         # Upstream's upgrade.sh exits 0 when there is nothing to migrate, so this
         # is safe to run on every start.
@@ -260,6 +328,13 @@ spec:
         - name: pg-gvm
           image: {{ include "openvas.image" (dict "root" $ "repo" "pg-gvm" "tag" .Values.image.tags.pgGvm) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["start-postgresql"]
+          # The script runs as root and shells out to psql/createuser/createdb
+          # over the socket. Without PGUSER those connect as role "root", which
+          # does not exist, and the role/DB/extension setup aborts.
+          env:
+            - name: PGUSER
+              value: "postgres"
           volumeMounts:
             - name: psql-data
               mountPath: /var/lib/postgresql
@@ -347,6 +422,20 @@ spec:
         - name: bootstrap-admin
           image: {{ include "openvas.image" (dict "root" $ "repo" "gvmd" "tag" .Values.image.tags.gvmd) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # gvmd guards its database connections with a SysV semaphore set, which
+          # the gvmd container creates as uid 1001 with mode 660. Containers in a
+          # pod share an IPC namespace, so this container can SEE that set — but
+          # root does not get to ignore SysV IPC permissions without
+          # CAP_IPC_OWNER, which is not in the default capability set. Running as
+          # root therefore fails with "error getting semaphore set info:
+          # Permission denied", and --create-user silently does nothing.
+          #
+          # So run as the same uid the gvmd image runs gvmd under. Every volume
+          # this container touches (/var/lib/gvm, /run/gvmd) is owned by 1001
+          # already, and pg_hba grants `local all all trust`.
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
           command:
             - /bin/sh
             - -c

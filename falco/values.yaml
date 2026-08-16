@@ -1,29 +1,30 @@
-falco:
-  jsonOutput: true
-  jsonIncludeOutputProperty: true
-  httpOutput:
-    enabled: true
-    url: "http://falcosidekick:2801/"
+# Envoy Gateway routing for the Falco stack.
+#
+# This chart deliberately holds ONLY the HTTPRoutes. Falco itself, its driver
+# DaemonSet, Falcosidekick and the Falcosidekick UI all come from the upstream
+# falcosecurity/falco chart — see README.md for the install order.
+#
+# The upstream chart only knows how to emit an Ingress, and this cluster has no
+# Ingress controller: Envoy Gateway terminates TLS at 192.168.95.51 and routes
+# by Gateway API HTTPRoute. So upstream's webui.ingress stays disabled and the
+# route lives here instead, matching how openvas and step-ca are wired.
 
-falcosidekick:
-  enabled: true
-  webui:
-    enabled: true
-    user: "admin:admin" # Default credentials, change in production
-    ingress:
-      enabled: true
-      ingressClassName: traefik
-      annotations:
-        traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
-        traefik.ingress.kubernetes.io/router.tls: "true"
-        traefik.ingress.kubernetes.io/redirect-entry-point: websecure
-      hosts:
-        - host: falco.kscsc.local
-          paths:
-            - path: /
-              pathType: ImplementationSpecific
-      tls:
-      - secretName: falco-tls
-        hosts:
-          - falco.kscsc.local
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: falco.kscsc.local
 
+  # Service published by the upstream chart's webui.
+  # Named "<release>-falcosidekick-ui"; with release "falco" that is:
+  serviceName: falco-falcosidekick-ui
+  servicePort: 2802
+
+  # Serve the UI on HTTPS only and 301 plain HTTP up to it. The UI is a
+  # basic-auth-protected event console, so no reason to answer on cleartext.
+  httpDirect: false
+
+  # The UI streams events over a long-lived connection; the Envoy default of 60s
+  # would cut the feed every minute and make the dashboard look broken.
+  timeout: 300s

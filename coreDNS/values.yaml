@@ -21,6 +21,8 @@ hosts:
     - ca.kscsc.local
     - splunk.kscsc.local
     - auth.kscsc.local
+    - openvas.kscsc.local
+    - falco.kscsc.local
   # -- Entries pinned to an explicit IP (hosts outside the cluster)
   static:
     - ip: 192.168.95.201
