@@ -1,0 +1,491 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openvas.fullname" . }}
+  labels:
+    app: {{ include "openvas.name" . }}
+spec:
+  replicas: 1
+  # RWO local-path volumes cannot be held by two pods at once, so a rolling
+  # update would deadlock waiting for volumes the outgoing pod still owns.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ include "openvas.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "openvas.name" . }}
+    spec:
+      # Upstream's generated configs refer to sibling compose services by name:
+      # nginx has a hardcoded `upstream gsad { server gsad:9392; }` with no env
+      # var to override it, and openvas.conf points at http://openvasd:80. In a
+      # single pod those names do not resolve, but every container shares the
+      # loopback interface — so alias them rather than patching generated files.
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - gsad
+            - openvasd
+      # No fsGroup on purpose. local-path already creates volumes mode 0777, and
+      # an fsGroup would make PGDATA group-accessible, which Postgres refuses to
+      # start on.
+      initContainers:
+        # Init containers run strictly in order, which reproduces the parts of
+        # compose's depends_on graph that are "wait for this to finish".
+        #
+        # KEEP_ALIVE is deliberately absent from every one of these. Upstream's
+        # init scripts end with `if [ -n "${KEEP_ALIVE}" ]; then sleep infinity; fi`
+        # and [ -n "0" ] is TRUE in POSIX sh — setting KEEP_ALIVE=0 would hang the
+        # pod at Init forever. Only omission makes them exit.
+        - name: gpg-data
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gpg-data" "tag" .Values.image.tags.gpgData) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: gpg-data
+              mountPath: /mnt
+
+        - name: vulnerability-tests
+          image: {{ include "openvas.image" (dict "root" $ "repo" "vulnerability-tests" "tag" .Values.image.tags.vulnerabilityTests) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: FEED_RELEASE
+              value: "{{ .Values.feedRelease }}"
+          volumeMounts:
+            - name: vt-data
+              mountPath: /mnt
+
+        - name: notus-data
+          image: {{ include "openvas.image" (dict "root" $ "repo" "notus-data" "tag" .Values.image.tags.notusData) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: notus-data
+              mountPath: /mnt
+
+        - name: scap-data
+          image: {{ include "openvas.image" (dict "root" $ "repo" "scap-data" "tag" .Values.image.tags.scapData) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: scap-data
+              mountPath: /mnt
+
+        - name: cert-bund-data
+          image: {{ include "openvas.image" (dict "root" $ "repo" "cert-bund-data" "tag" .Values.image.tags.certBundData) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: cert-data
+              mountPath: /mnt
+
+        # Shares cert-data with cert-bund-data above; compose orders it second.
+        - name: dfn-cert-data
+          image: {{ include "openvas.image" (dict "root" $ "repo" "dfn-cert-data" "tag" .Values.image.tags.dfnCertData) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: cert-data
+              mountPath: /mnt
+
+        - name: data-objects
+          image: {{ include "openvas.image" (dict "root" $ "repo" "data-objects" "tag" .Values.image.tags.dataObjects) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: FEED_RELEASE
+              value: "{{ .Values.feedRelease }}"
+          volumeMounts:
+            - name: data-objects
+              mountPath: /mnt
+
+        # Shares data-objects with the container above; compose orders it second.
+        - name: report-formats
+          image: {{ include "openvas.image" (dict "root" $ "repo" "report-formats" "tag" .Values.image.tags.reportFormats) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: FEED_RELEASE
+              value: "{{ .Values.feedRelease }}"
+          volumeMounts:
+            - name: data-objects
+              mountPath: /mnt
+
+        # Copies the built web UI out for nginx to serve.
+        - name: gsa
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gsa" "tag" .Values.image.tags.gsa) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: MOUNT_PATH
+              value: /mnt/web
+          volumeMounts:
+            - name: gsa-data
+              mountPath: /mnt/web
+
+        - name: gvm-config
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gvm-config" "tag" .Values.image.tags.gvmConfig) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ENABLE_NGINX_CONFIG
+              value: "true"
+            - name: ENABLE_TLS_GENERATION
+              value: "{{ .Values.nginx.enableTlsGeneration }}"
+            # Envoy terminates TLS upstream of this pod, so nginx has to serve
+            # content over plain HTTP. Left at the defaults it would answer the
+            # HTTP port with `301 -> https://$host:443`, and since that host is
+            # Envoy again, the request would loop indefinitely.
+            - name: NGINX_ENABLE_HTTP
+              value: "{{ .Values.nginx.enableHttp }}"
+            - name: NGINX_ENABLE_HTTP_REDIRECT
+              value: "{{ .Values.nginx.enableHttpRedirect }}"
+            # Default is 9392, which is also gsad's port. Harmless across two
+            # compose containers, a bind conflict inside one pod.
+            - name: NGINX_HTTP_PORT
+              value: "{{ .Values.nginx.httpPort }}"
+            - name: NGINX_HTTPS_PORT
+              value: "{{ .Values.nginx.httpsPort }}"
+            - name: NGINX_HOST
+              value: "{{ .Values.gateway.hostname }}"
+            # Defaults to https://$NGINX_HOST:$NGINX_HTTPS_PORT, which would carry
+            # an explicit :443 the browser's Origin header never sends.
+            - name: NGINX_ACCESS_CONTROL_ALLOW_ORIGIN_HEADER
+              value: "https://{{ .Values.gateway.hostname }}"
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /mnt/nginx/configs
+            - name: nginx-certs
+              mountPath: /mnt/nginx/certs
+
+        - name: configure-openvas
+          image: {{ include "openvas.image" (dict "root" $ "repo" "openvas-scanner" "tag" .Values.image.tags.openvasScanner) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              printf "table_driven_lsc = yes\nopenvasd_server = http://openvasd:80\n" > /mnt/openvas.conf
+              sed "s/127/128/" /etc/openvas/openvas_log.conf | sed 's/gvm/openvas/' > /mnt/openvas_log.conf
+              chmod 644 /mnt/openvas.conf
+              chmod 644 /mnt/openvas_log.conf
+              touch /var/log/openvas/openvas.log
+              chmod 666 /var/log/openvas/openvas.log
+          volumeMounts:
+            - name: openvas-data
+              mountPath: /mnt
+            - name: openvas-log
+              mountPath: /var/log/openvas
+
+        # Upstream's upgrade.sh exits 0 when there is nothing to migrate, so this
+        # is safe to run on every start.
+        - name: pg-gvm-migrator
+          image: {{ include "openvas.image" (dict "root" $ "repo" "pg-gvm-migrator" "tag" .Values.image.tags.pgGvmMigrator) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: psql-data
+              mountPath: /var/lib/postgresql
+            - name: psql-socket
+              mountPath: /var/run/postgresql
+
+      containers:
+        # Only nginx carries a readinessProbe. Pod readiness is an AND across
+        # every probed container, so probing the sidecars would let one unhealthy
+        # helper pull the whole web UI out of the Service.
+        - name: nginx
+          image: {{ include "openvas.image" (dict "root" $ "repo" "nginx" "tag" .Values.image.tags.nginx) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.nginx.httpPort }}
+            - name: https
+              containerPort: {{ .Values.nginx.httpsPort }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.nginx.httpPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 30
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+            - name: nginx-certs
+              mountPath: /etc/nginx/certs
+              readOnly: true
+            - name: gsa-data
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+
+        - name: gsad
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gsad" "tag" .Values.image.tags.gsad) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: GSAD_HTTP_ONLY
+              value: "true"
+            - name: GSAD_API_ONLY
+              value: "true"
+            - name: GSAD_FOREGROUND
+              value: "true"
+          volumeMounts:
+            - name: gvmd-socket
+              mountPath: /run/gvmd
+
+        # No probes: on a first install gvmd spends 30-60+ minutes importing SCAP
+        # and CERT data into Postgres before it answers on its socket. It polls
+        # for Postgres itself (waits on $PGRES_DATA/started, then retries psql),
+        # so it does not need K8s to order it after pg-gvm.
+        - name: gvmd
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gvmd" "tag" .Values.image.tags.gvmd) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            # These four are nested paths backed by four SEPARATE volumes, exactly
+            # as upstream compose does it. Do not collapse them into subPaths of
+            # one PVC — nested same-PVC subPath mounts are mount-order dependent.
+            - name: gvmd-data
+              mountPath: /var/lib/gvm
+            - name: scap-data
+              mountPath: /var/lib/gvm/scap-data
+            - name: cert-data
+              mountPath: /var/lib/gvm/cert-data
+            - name: data-objects
+              mountPath: /var/lib/gvm/data-objects/gvmd
+            - name: vt-data
+              mountPath: /var/lib/openvas/plugins
+            - name: psql-data
+              mountPath: /var/lib/postgresql
+            - name: gvmd-socket
+              mountPath: /run/gvmd
+            - name: ospd-socket
+              mountPath: /run/ospd
+            - name: psql-socket
+              mountPath: /var/run/postgresql
+          resources:
+{{ toYaml .Values.resources.gvmd | indent 12 }}
+
+        # Communicates over the unix socket only; no TCP listener is needed.
+        - name: pg-gvm
+          image: {{ include "openvas.image" (dict "root" $ "repo" "pg-gvm" "tag" .Values.image.tags.pgGvm) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: psql-data
+              mountPath: /var/lib/postgresql
+            - name: psql-socket
+              mountPath: /var/run/postgresql
+          resources:
+{{ toYaml .Values.resources.postgres | indent 12 }}
+
+        - name: redis-server
+          image: {{ include "openvas.image" (dict "root" $ "repo" "redis-server" "tag" .Values.image.tags.redisServer) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: redis-socket
+              mountPath: /run/redis
+
+        # Notus-only mode: serves the static (package-version) vulnerability
+        # checks that ospd-openvas queries over HTTP via the openvasd hostAlias.
+        - name: openvasd
+          image: {{ include "openvas.image" (dict "root" $ "repo" "openvas-scanner" "tag" .Values.image.tags.openvasScanner) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: OPENVASD_MODE
+              value: service_notus
+            - name: GNUPGHOME
+              value: /etc/openvas/gnupg
+            - name: LISTENING
+              value: 0.0.0.0:80
+          volumeMounts:
+            - name: openvas-data
+              mountPath: /etc/openvas
+            - name: gpg-data
+              mountPath: /etc/openvas/gnupg
+            - name: notus-data
+              mountPath: /var/lib/notus
+            - name: openvas-log
+              mountPath: /var/log/openvas
+
+        # The actual scanner. This is the only container that needs privileges.
+        - name: ospd-openvas
+          image: {{ include "openvas.image" (dict "root" $ "repo" "ospd-openvas" "tag" .Values.image.tags.ospdOpenvas) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - ospd-openvas
+            - -f
+            - --config
+            - /etc/gvm/ospd-openvas.conf
+            - --notus-feed-dir
+            - /var/lib/notus/advisories
+            - -m
+            - "666"
+          securityContext:
+            capabilities:
+              add:
+{{ toYaml .Values.scanner.capabilities | indent 16 }}
+            {{- if .Values.scanner.seccompUnconfined }}
+            seccompProfile:
+              type: Unconfined
+            {{- end }}
+            {{- if .Values.scanner.apparmorUnconfined }}
+            appArmorProfile:
+              type: Unconfined
+            {{- end }}
+          volumeMounts:
+            - name: openvas-data
+              mountPath: /etc/openvas
+            - name: gpg-data
+              mountPath: /etc/openvas/gnupg
+            - name: vt-data
+              mountPath: /var/lib/openvas/plugins
+            - name: notus-data
+              mountPath: /var/lib/notus
+            - name: ospd-socket
+              mountPath: /run/ospd
+            - name: redis-socket
+              mountPath: /run/redis
+            - name: openvas-log
+              mountPath: /var/log/openvas
+          resources:
+{{ toYaml .Values.resources.ospdOpenvas | indent 12 }}
+
+{{- if .Values.adminUser.enabled }}
+        # gvmd ships with no accounts; one has to be created against its database
+        # before the web UI can be used. Guarded so a failure here can never
+        # crashloop the pod or take nginx out of the Service.
+        - name: bootstrap-admin
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gvmd" "tag" .Values.image.tags.gvmd) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -u
+              echo "waiting for gvmd to come up (first run imports SCAP, this is slow)..."
+              until [ -S /run/gvmd/gvmd.sock ]; do sleep 10; done
+              sleep 15
+              if gvmd --get-users 2>/dev/null | grep -qx "$ADMIN_USER"; then
+                echo "user $ADMIN_USER already exists"
+              {{- if .Values.adminUser.forcePassword }}
+                gvmd --user="$ADMIN_USER" --new-password="$ADMIN_PASSWORD" \
+                  && echo "password reset" || echo "WARNING: password reset failed"
+              {{- end }}
+              else
+                gvmd --create-user="$ADMIN_USER" --password="$ADMIN_PASSWORD" \
+                  && echo "created user $ADMIN_USER" || echo "WARNING: user creation failed"
+              fi
+              echo "bootstrap finished"
+              sleep infinity
+          env:
+            - name: ADMIN_USER
+              value: "{{ .Values.adminUser.username }}"
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.adminUser.existingSecret | default (printf "%s-admin" (include "openvas.fullname" .)) }}
+                  key: {{ .Values.adminUser.passwordKey }}
+          volumeMounts:
+            - name: gvmd-data
+              mountPath: /var/lib/gvm
+            - name: psql-data
+              mountPath: /var/lib/postgresql
+            - name: gvmd-socket
+              mountPath: /run/gvmd
+            - name: psql-socket
+              mountPath: /var/run/postgresql
+{{- end }}
+
+{{- if .Values.extras.openvasLogTail }}
+        - name: openvas
+          image: {{ include "openvas.image" (dict "root" $ "repo" "openvas-scanner" "tag" .Values.image.tags.openvasScanner) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cat /etc/openvas/openvas.conf
+              tail -f /var/log/openvas/openvas.log
+          volumeMounts:
+            - name: openvas-data
+              mountPath: /etc/openvas
+            - name: openvas-log
+              mountPath: /var/log/openvas
+{{- end }}
+
+{{- if .Values.extras.gvmTools }}
+        - name: gvm-tools
+          image: {{ include "openvas.image" (dict "root" $ "repo" "gvm-tools" "tag" .Values.image.tags.gvmTools | default "latest") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sleep", "infinity"]
+          volumeMounts:
+            - name: gvmd-socket
+              mountPath: /run/gvmd
+            - name: ospd-socket
+              mountPath: /run/ospd
+{{- end }}
+
+      volumes:
+        # Persistent — one per upstream named volume.
+{{- if .Values.persistence.enabled }}
+        - name: vt-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-vt-data
+        - name: notus-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-notus-data
+        - name: scap-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-scap-data
+        - name: cert-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-cert-data
+        - name: data-objects
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-data-objects
+        - name: gvmd-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-gvmd-data
+        - name: psql-data
+          persistentVolumeClaim:
+            claimName: {{ include "openvas.fullname" . }}-psql-data
+{{- else }}
+        - name: vt-data
+          emptyDir: {}
+        - name: notus-data
+          emptyDir: {}
+        - name: scap-data
+          emptyDir: {}
+        - name: cert-data
+          emptyDir: {}
+        - name: data-objects
+          emptyDir: {}
+        - name: gvmd-data
+          emptyDir: {}
+        - name: psql-data
+          emptyDir: {}
+{{- end }}
+        # Ephemeral — regenerated by the init containers on every start.
+        - name: gpg-data
+          emptyDir: {}
+        - name: gsa-data
+          emptyDir: {}
+        - name: nginx-config
+          emptyDir: {}
+        - name: nginx-certs
+          emptyDir: {}
+        - name: openvas-data
+          emptyDir: {}
+        - name: openvas-log
+          emptyDir: {}
+        # Unix socket directories. These are why the stack has to be one pod.
+        - name: gvmd-socket
+          emptyDir: {}
+        - name: ospd-socket
+          emptyDir: {}
+        - name: redis-socket
+          emptyDir: {}
+        - name: psql-socket
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,21 @@
+{{- if .Values.trustedCA.enabled }}
+{{- $pem := .Values.trustedCA.pem }}
+{{- if and (not $pem) .Values.trustedCA.sourceConfigMap }}
+{{- $src := lookup "v1" "ConfigMap" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap }}
+{{- if $src }}
+{{- $pem = index $src.data .Values.trustedCA.sourceKey }}
+{{- end }}
+{{- end }}
+{{- if not $pem }}
+{{- fail (printf "trustedCA.enabled is true but no CA found: set trustedCA.pem, or make sure ConfigMap %s/%s has key %s" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap .Values.trustedCA.sourceKey) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "news-bot.fullname" . }}-trusted-ca
+  labels:
+    {{- include "news-bot.labels" . | nindent 4 }}
+data:
+  root_ca.crt: |
+{{ $pem | trim | indent 4 }}
+{{- end }}

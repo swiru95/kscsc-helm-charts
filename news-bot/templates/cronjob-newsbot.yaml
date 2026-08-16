@@ -43,6 +43,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           automountServiceAccountToken: false
+          {{- if .Values.trustedCA.enabled }}
+          initContainers:
+            {{- include "news-bot.trustedCA.initContainer" . | nindent 12 }}
+          {{- end }}
           containers:
             - name: news-bot
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -61,6 +65,9 @@ spec:
                       name: {{ include "news-bot.secretName" . }}
                       key: {{ .Values.ollama.authSecretKey }}
                       optional: true
+                {{- if .Values.trustedCA.enabled }}
+                {{- include "news-bot.trustedCA.env" . | nindent 16 }}
+                {{- end }}
                 {{- with .Values.newsbot.extraEnv }}
                 {{- toYaml . | nindent 16 }}
                 {{- end }}
@@ -83,7 +90,13 @@ spec:
                   mountPath: /data
                 - name: tmp
                   mountPath: /tmp
+                {{- if .Values.trustedCA.enabled }}
+                {{- include "news-bot.trustedCA.volumeMounts" . | nindent 16 }}
+                {{- end }}
           volumes:
+            {{- if .Values.trustedCA.enabled }}
+            {{- include "news-bot.trustedCA.volumes" . | nindent 12 }}
+            {{- end }}
             - name: tmp
               emptyDir:
                 sizeLimit: 256Mi

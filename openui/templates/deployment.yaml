@@ -14,6 +14,25 @@ spec:
       labels:
         app: {{ include "openui.name" . }}
     spec:
+{{- if .Values.trustedCA.enabled }}
+      # The image bundle has no KSCSC root, so llama-server's HTTPS cert would
+      # fail verification. Append the root instead of replacing the bundle —
+      # OIDC still needs the public CAs to reach the identity provider.
+      initContainers:
+        - name: ca-bundle
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - cat /etc/ssl/certs/ca-certificates.crt /kscsc-ca/root_ca.crt > /ca-bundle/ca-certificates.crt
+          volumeMounts:
+            - name: kscsc-ca
+              mountPath: /kscsc-ca
+              readOnly: true
+            - name: ca-bundle
+              mountPath: /ca-bundle
+{{- end }}
       containers:
         - name: openui
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -88,19 +107,46 @@ spec:
             {{- if .Values.extraEnv }}
             {{- toYaml .Values.extraEnv | nindent 12 }}
             {{- end }}
+{{- if .Values.trustedCA.enabled }}
 
-{{- if .Values.pvc.enabled }}
+            # --- Private CA trust ---
+            # requests reads REQUESTS_CA_BUNDLE; everything on the stdlib ssl
+            # module (aiohttp, httpx) reads SSL_CERT_FILE.
+            - name: SSL_CERT_FILE
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: REQUESTS_CA_BUNDLE
+              value: /etc/ssl/certs/ca-certificates.crt
+{{- end }}
+
+{{- if or .Values.pvc.enabled .Values.trustedCA.enabled }}
           volumeMounts:
+{{- if .Values.pvc.enabled }}
             - name: data
               mountPath: /app/backend/data
 {{- end }}
+{{- if .Values.trustedCA.enabled }}
+            - name: ca-bundle
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt
+              readOnly: true
+{{- end }}
+{{- end }}
           resources:
 {{ toYaml .Values.resources | indent 12 }}
-{{- if .Values.pvc.enabled }}
+{{- if or .Values.pvc.enabled .Values.trustedCA.enabled }}
       volumes:
+{{- if .Values.pvc.enabled }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "openui.fullname" . }}-data{{ end }}
+{{- end }}
+{{- if .Values.trustedCA.enabled }}
+        - name: kscsc-ca
+          configMap:
+            name: {{ include "openui.fullname" . }}-trusted-ca
+        - name: ca-bundle
+          emptyDir: {}
+{{- end }}
 {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -32,13 +32,26 @@ ollama:
 
 openai:
   enabled: true
-  # llama.cpp router; note port 8080 and the /v1 suffix
-  baseUrl: "http://llama.kscsc.local:8080/v1"
+  # llama.cpp router; HTTPS on port 8443 with the /v1 suffix
+  baseUrl: "https://llama.kscsc.local:8443/v1"
   # llama-server runs with --api-key-file, so a key is REQUIRED.
   # Prefer a Secret; apiKey below is a plaintext fallback for quick testing.
   apiKeySecretName: "openui-llm-api-key"
   apiKeyKey: "api-key"
   apiKey: ""
+
+# --- Private CA trust ---
+# llama-server presents a cert from the in-cluster step-ca, whose root is in no
+# public bundle. An init container appends it to the image's CA bundle (see
+# deployment.yaml); the public CAs stay in place so OIDC keeps working.
+# The PEM is read from step-ca's own ConfigMap at install time; set `pem`
+# instead to pin it literally (needed if the CA lives outside this cluster).
+trustedCA:
+  enabled: true
+  sourceNamespace: "step-ca"
+  sourceConfigMap: "step-ca-step-certificates-certs"
+  sourceKey: "root_ca.crt"
+  pem: ""
 
 # -- Let Open WebUI persist config in its DB. Set false so the backend settings
 # above are authoritative on every restart rather than only seeding first boot.

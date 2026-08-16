@@ -72,18 +72,23 @@ config:
     maxArticlesPerFeed: 20
 
 # -- LLM backend -------------------------------------------------------------
-# Backend is llama-server (llama.cpp) at llama.kscsc.local:8080. Both the main
+# Backend is llama-server (llama.cpp) at llama.kscsc.local:8443 over HTTPS. Both the main
 # news-bot pipeline and the linkedin-feeder CronJob use the same OpenAI-compatible
 # endpoint (/v1/chat/completions) with an Authorization header for authentication.
 ollama:
   provider: "ollama"
   model: "Qwen/Qwen3-32B-GGUF:Q4_K_M"
-  apiUrl: "http://llama.kscsc.local:8080/v1/chat/completions"
+  apiUrl: "https://llama.kscsc.local:8443/v1/chat/completions"
   # Full Authorization header value, e.g. "Bearer <key>". llama-server runs with
   # --api-key-file and rejects unauthenticated calls with 401. Supply at deploy
   # time (--set ollama.authHeader=...); keep empty in git. Also written to the
   # Secret as authSecretKey when secrets.create is true.
   authHeader: ""
+  # Cannot be true yet, even though trustedCA puts the KSCSC root in the bundle:
+  # that root carries no keyUsage extension, and this image is on Python 3.13,
+  # where ssl.create_default_context() enables VERIFY_X509_STRICT by default —
+  # which rejects a CA cert without keyUsage (error 92). Flip to true once the
+  # root has been re-issued with keyUsage certSign/cRLSign.
   tlsVerify: false
   authSource: "claude_cli"
   webSearch: false
@@ -95,6 +100,20 @@ ollama:
   # Authorization header for the LinkedIn feeder; mounted as LLM_AUTH_HEADER.
   # The env var is optional, so the chart still renders if the key is absent.
   authSecretKey: "llm-auth-header"
+
+# -- Private CA trust --------------------------------------------------------
+# llama-server presents a cert from the in-cluster step-ca, whose root is in no
+# public bundle. An init container appends it to the image's CA bundle so TLS
+# verification can stay on; the public roots stay in place because the pipeline
+# also fetches RSS over public HTTPS.
+# The PEM is read from step-ca's own ConfigMap at install time; set `pem`
+# instead to pin it literally (needed if the CA lives outside this cluster).
+trustedCA:
+  enabled: true
+  sourceNamespace: "step-ca"
+  sourceConfigMap: "step-ca-step-certificates-certs"
+  sourceKey: "root_ca.crt"
+  pem: ""
 
 # -- LinkedIn org metadata ---------------------------------------------------
 linkedinOrg:

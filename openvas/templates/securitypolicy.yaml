@@ -1,0 +1,44 @@
+{{- if .Values.sso.enabled }}
+{{- if not .Values.sso.clientID }}
+{{- fail "sso.enabled is true but sso.clientID is empty: register an app in your IdP for https://<gateway.hostname> and set sso.clientID" }}
+{{- end }}
+{{- if not .Values.sso.clientSecretName }}
+{{- fail "sso.enabled is true but sso.clientSecretName is empty: create a Secret with a 'client-secret' key in this namespace and name it here" }}
+{{- end }}
+# Gateway-level OIDC. This does NOT log you in to GSA.
+#
+# Greenbone supports only local, LDAP and RADIUS authentication — there is no
+# OIDC or SAML, and gsad has no trusted-header/reverse-proxy auth mode. So this
+# policy gates who can *reach* the application; GSA still presents its own login
+# afterwards. It is defence in depth for a high-value UI, not single sign-on.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "openvas.fullname" . }}-oidc
+  labels:
+    app: {{ include "openvas.name" . }}
+spec:
+  # Namespace-local: this must sit in the same namespace as the HTTPRoute.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ .Release.Name }}-https
+  oidc:
+    provider:
+      # Envoy discovers endpoints at {issuer}/.well-known/openid-configuration,
+      # so this is the bare issuer URL, NOT the discovery document itself.
+      issuer: {{ .Values.sso.issuer | quote }}
+    clientID: {{ .Values.sso.clientID | quote }}
+    clientSecret:
+      name: {{ .Values.sso.clientSecretName }}
+    # Must be registered verbatim as a redirect URI in the IdP app registration.
+    redirectURL: "https://{{ .Values.gateway.hostname }}{{ .Values.sso.redirectPath }}"
+    logoutPath: {{ .Values.sso.logoutPath | quote }}
+    {{- with .Values.sso.scopes }}
+    scopes:
+{{ toYaml . | indent 6 }}
+    {{- end }}
+    {{- if .Values.sso.cookieDomain }}
+    cookieDomain: {{ .Values.sso.cookieDomain | quote }}
+    {{- end }}
+{{- end }}

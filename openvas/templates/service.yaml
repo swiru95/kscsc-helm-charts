@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openvas.fullname" . }}
+  labels:
+    app: {{ include "openvas.name" . }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    # nginx's plain-HTTP listener. Envoy terminates TLS, so nginx's own :443
+    # self-signed listener is deliberately not exposed here.
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.nginx.httpPort }}
+      protocol: TCP
+      name: http
+  selector:
+    app: {{ include "openvas.name" . }}

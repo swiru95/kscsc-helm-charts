@@ -34,6 +34,7 @@ All `*.kscsc.local` DNS is resolved **in-cluster** via a custom CoreDNS server b
 | :--- | :--- | :--- |
 | **[BloodHound](bloodhound/)** | `bloodhound` | Active Directory attack path management (custom templates) |
 | **[Falco](falco/)** | `falco` | Runtime threat detection for Kubernetes |
+| **[OpenVAS](openvas/)** | `openvas` | Greenbone Community Edition vulnerability scanner (single-pod, 19 containers) |
 | **[OAuth2 Proxy](oauth2-proxy/)** | `oauth2-proxy` | Authentication proxy — protects services behind SSO |
 
 ### 🤖 AI & LLMs
@@ -66,6 +67,7 @@ All nginx ingresses are annotated with `cert-manager.io/cluster-issuer: "kscsc-c
 | `splunk.kscsc.local` | splunk | ✅ Auto (cert-manager) |
 | `n8n.kscsc.local` | n8n | ✅ Auto (cert-manager) |
 | `bloodhound.kscsc.local` | bloodhound | ✅ Auto (cert-manager) |
+| `openvas.kscsc.local` | openvas | ✅ Auto (cert-manager) |
 
 ---
 

@@ -1,0 +1,193 @@
+# Greenbone Community Edition (OpenVAS) on k3s.
+#
+# Upstream ships this as a 21-service docker-compose stack whose components talk
+# over shared unix sockets (/run/gvmd, /run/ospd, /run/redis, /var/run/postgresql).
+# There is no RWX storage class here (local-path is RWO and node-local), so socket
+# volumes cannot cross pods: the whole stack is ONE pod with 12 init containers
+# and 7 long-running containers. See README.md for the derivation.
+
+image:
+  registry: registry.community.greenbone.net/community
+  # `latest` on the feed-data images is how feeds stay current — Greenbone rebuilds
+  # them continuously, so Always is what picks up new NVTs/CVEs on restart.
+  pullPolicy: Always
+  tags:
+    # Long-running services
+    gvmd: stable
+    gsad: stable
+    pgGvm: stable
+    ospdOpenvas: stable
+    openvasScanner: stable
+    redisServer: latest
+    nginx: latest
+    # Run-once init images
+    gsa: stable-slim
+    pgGvmMigrator: stable
+    gvmConfig: latest
+    gpgData: latest
+    vulnerabilityTests: latest
+    notusData: latest
+    scapData: latest
+    certBundData: latest
+    dfnCertData: latest
+    dataObjects: latest
+    reportFormats: latest
+    # Only pulled when extras.gvmTools is enabled.
+    gvmTools: latest
+
+# Greenbone feed release pinned by the vulnerability-tests, data-objects and
+# report-formats images. Bump in step with upstream's compose.yaml.
+feedRelease: "24.10"
+
+service:
+  type: ClusterIP
+  # nginx's plain-HTTP listener. NOT 9392 — that is gsad's own port and would
+  # collide inside a single pod. See nginx.httpPort below.
+  port: 8080
+
+ingress:
+  enabled: false
+
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: openvas.kscsc.local
+  serviceName: openvas-openvas
+  servicePort: 8080
+  httpDirect: false
+  # Scan report rendering is slow; nginx itself defaults to a 1h read timeout.
+  timeout: 300s
+
+nginx:
+  # Upstream generates an nginx config where the HTTP port only issues a
+  # 301 to https, and serves content solely on the TLS listener. Envoy already
+  # terminates TLS for us, so we flip it: serve content on plain HTTP and turn
+  # the redirect off, otherwise Envoy->nginx->Envoy loops forever.
+  httpPort: 8080
+  httpsPort: 443
+  enableHttp: true
+  enableHttpRedirect: false
+  # gvm-config still has to generate a self-signed cert because the rendered
+  # config always emits `listen <httpsPort> ssl;`. We simply never route to it.
+  enableTlsGeneration: true
+
+# The scanner's raw-socket requirements. NET_RAW backs boreas alive detection,
+# NET_ADMIN backs promiscuous-mode capture; upstream also runs it with seccomp
+# and apparmor unconfined.
+scanner:
+  capabilities:
+    - NET_ADMIN
+    - NET_RAW
+  seccompUnconfined: true
+  apparmorUnconfined: true
+
+# Optional debug containers from upstream's compose. Both are inert by default.
+extras:
+  # Tails /var/log/openvas/openvas.log in its own container.
+  openvasLogTail: false
+  # gvm-tools CLI (gvm-cli/gvm-script) with the gvmd and ospd sockets mounted.
+  gvmTools: false
+
+# First login. gvmd has no admin account until one is created against its
+# database. The bootstrap container waits for gvmd's socket and creates the user
+# once, idempotently; it never exits non-zero, so it cannot crashloop the pod.
+# Set enabled=false to do it by hand instead (NOTES.txt prints the command).
+adminUser:
+  enabled: true
+  username: admin
+  # Leave blank and set existingSecret instead for anything you care about.
+  password: ""
+  existingSecret: ""
+  passwordKey: password
+  # Reset the password to match this chart on every restart, rather than only
+  # creating the account when it is missing.
+  forcePassword: false
+
+# One PVC per upstream named volume. Deliberately NOT collapsed into a single
+# PVC with subPaths: gvmd mounts scap/cert/data-objects at paths *nested inside*
+# its own /var/lib/gvm mount, and same-PVC nested subPath mounts are order
+# dependent and have been reported to fail. Separate volumes mirror compose 1:1.
+# local-path does not enforce these sizes and cannot expand them later, so they
+# are advisory — the real limit is the node's disk.
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  sizes:
+    # Extracted SCAP (CVE/CPE) data — by far the largest feed.
+    scapData: 15Gi
+    # Postgres, which grows as gvmd imports SCAP/CERT and stores scan results.
+    psqlData: 20Gi
+    vtData: 10Gi
+    gvmdData: 5Gi
+    notusData: 2Gi
+    certData: 2Gi
+    dataObjects: 1Gi
+
+resources:
+  gvmd:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 8Gi
+  ospdOpenvas:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 6Gi
+  postgres:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 4Gi
+
+# Pins to the CPU worker: local-path is node-local, and that node has the disk.
+# No nvidia toleration on purpose — the GPU node is the only tainted one and we
+# do not want a 25GB scanner landing there.
+nodeSelector:
+  kscsc.local/role: cpu
+tolerations: []
+affinity: {}
+
+# --- Gateway-level OIDC (NOT single sign-on into GSA) ---
+# Greenbone authenticates against local accounts, LDAP or RADIUS only. It has no
+# OIDC/SAML support and gsad will not trust a reverse proxy's identity headers,
+# so nothing can hand an Entra ID login through to the GSA session. Enabling this
+# puts Entra ID in front of the route: unauthenticated users never reach the app,
+# but authenticated ones still see GSA's own login form. That is a second factor
+# in practice, not SSO.
+#
+# Prerequisites:
+#   1. An app registration in Entra ID with redirect URI
+#      https://<gateway.hostname><sso.redirectPath>
+#   2. A Secret in THIS namespace holding the client secret under key
+#      "client-secret", named by sso.clientSecretName
+#   3. The envoy-oidc-hmac Secret in envoy-gateway-system (already present)
+sso:
+  enabled: false
+  # Bare issuer URL — Envoy appends /.well-known/openid-configuration itself.
+  issuer: ""
+  clientID: ""
+  clientSecretName: "openvas-oidc"
+  redirectPath: /oauth2/callback
+  logoutPath: /logout
+  scopes:
+    - openid
+    - profile
+    - email
+  cookieDomain: ""
+
+networkPolicy:
+  enabled: true
+  allow: []
+  ingress:
+    enabled: true
+    namespace: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: envoy

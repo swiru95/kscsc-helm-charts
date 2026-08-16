@@ -14,7 +14,7 @@ This chart lives in the infrastructure repository. The application image and sou
 ┌─────────────────────────┐  ┌──────────────────┐       ┌────────────────────────┐ │
 │  llama-server (llama.   │  │  CronJob         │       │  CronJob               │ │
 │  cpp)                   │  │  news-bot        │       │  linkedin-feeder       │ │
-│  llama.kscsc.local:8080 │  │  14:00 M-F       │       │  16:00 M-F             │ │
+│  llama.kscsc.local:8443 │  │  14:00 M-F       │       │  16:00 M-F             │ │
 └────────┬────────────────┘  │                  │       │                        │ │
          │                   │  1. Fetch RSS    │       │  1. Read NEWS.md       │ │
          │                   │  2. Dedup+Embed  │       │  2. Summarize (LLM)    │ │
@@ -62,7 +62,7 @@ This chart lives in the infrastructure repository. The application image and sou
 - Kubernetes 1.27+
 - Helm 3.x
 - Built and published or imported `news-bot` image
-- OpenAI-compatible LLM endpoint reachable from the cluster (currently llama-server at `llama.kscsc.local:8080`)
+- OpenAI-compatible LLM endpoint reachable from the cluster (currently llama-server at `llama.kscsc.local:8443`, HTTPS)
 - LinkedIn Developer App with OAuth 2.0 credentials
 
 ## Build the application image
@@ -77,7 +77,7 @@ docker build -t ghcr.io/swiru95/news-bot:latest .
 If your cluster does not pull from GHCR directly, tag and publish or import the image using your existing cluster workflow.
 
 The current chart defaults use a pinned GHCR image and the llama-server (llama.cpp)
-endpoint at `http://llama.kscsc.local:8080/v1/chat/completions`. That endpoint
+endpoint at `https://llama.kscsc.local:8443/v1/chat/completions`. That endpoint
 requires an API key, needed by both the main news-bot pipeline and the linkedin-feeder.
 
 The API key can be supplied in two ways:

@@ -69,7 +69,7 @@ newsbot:
   ttlSecondsAfterFinished: 3600
 nodeSelector: {}
 ollama:
-  apiUrl: http://llama.kscsc.local:8080/v1/chat/completions
+  apiUrl: https://llama.kscsc.local:8443/v1/chat/completions
   authHeader: ''
   authSecretKey: ''
   authSource: claude_cli

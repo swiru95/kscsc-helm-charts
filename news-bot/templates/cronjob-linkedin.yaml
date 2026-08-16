@@ -44,6 +44,10 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           automountServiceAccountToken: false
+          {{- if .Values.trustedCA.enabled }}
+          initContainers:
+            {{- include "news-bot.trustedCA.initContainer" . | nindent 12 }}
+          {{- end }}
           containers:
             - name: linkedin-feeder
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -138,6 +142,9 @@ spec:
                       name: {{ include "news-bot.secretName" . }}
                       key: {{ .Values.ollama.authSecretKey }}
                       optional: true
+                {{- if .Values.trustedCA.enabled }}
+                {{- include "news-bot.trustedCA.env" . | nindent 16 }}
+                {{- end }}
               envFrom:
                 - configMapRef:
                     name: {{ include "news-bot.fullname" . }}-config
@@ -148,7 +155,13 @@ spec:
                   mountPath: /data
                 - name: tmp
                   mountPath: /tmp
+                {{- if .Values.trustedCA.enabled }}
+                {{- include "news-bot.trustedCA.volumeMounts" . | nindent 16 }}
+                {{- end }}
           volumes:
+            {{- if .Values.trustedCA.enabled }}
+            {{- include "news-bot.trustedCA.volumes" . | nindent 12 }}
+            {{- end }}
             - name: tmp
               emptyDir:
                 sizeLimit: 64Mi

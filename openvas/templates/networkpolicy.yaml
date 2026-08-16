@@ -1,0 +1,39 @@
+{{- if .Values.networkPolicy.enabled }}
+# NOTE: k3s runs flannel with no NetworkPolicy controller, so nothing in this
+# cluster currently enforces this object — it documents intent and takes effect
+# if a policy-capable CNI is ever installed. Do not treat it as containment for
+# a pod that holds NET_RAW and NET_ADMIN.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "openvas.fullname" . }}
+  labels:
+    app: {{ include "openvas.name" . }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "openvas.name" . }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.allow }}
+    - from:
+      {{- range .Values.networkPolicy.allow }}
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .namespace }}
+        podSelector:
+          matchLabels:
+            app: {{ .name }}
+      {{- end }}
+    {{- end }}
+    {{- if .Values.networkPolicy.ingress.enabled }}
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingress.namespace }}
+        podSelector:
+          matchLabels:
+{{ toYaml .Values.networkPolicy.ingress.podLabels | indent 12 }}
+    {{- end }}
+{{- end }}

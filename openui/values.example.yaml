@@ -57,7 +57,7 @@ openai:
   apiKey: ''
   apiKeyKey: ''
   apiKeySecretName: ''
-  baseUrl: http://llama.kscsc.local:8080/v1
+  baseUrl: https://llama.kscsc.local:8443/v1
   enabled: true
 persistentConfig: false
 pvc:

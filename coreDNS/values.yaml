@@ -25,6 +25,10 @@ hosts:
   static:
     - ip: 192.168.95.201
       name: llama.kscsc.local
+    # Needed so step-ca can resolve the ACME http-01 challenge target when
+    # Proxmox orders certificates from the in-cluster CA.
+    - ip: 192.168.95.200
+      name: proxmox.kscsc.local
 
 # ---------------------------------------------------------------------------
 # CoreDNS Deployment patch (GPU toleration)

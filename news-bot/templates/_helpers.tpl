@@ -81,6 +81,58 @@ Feeds ConfigMap name (inline-created or existing)
 {{- end }}
 
 {{/*
+Trusted CA: init container that appends the private root to the image's CA
+bundle. Appends rather than replaces — the pipeline also fetches RSS over
+public HTTPS, which still needs the Mozilla roots. Shared by both CronJobs.
+*/}}
+{{- define "news-bot.trustedCA.initContainer" -}}
+- name: ca-bundle
+  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  command:
+    - sh
+    - -c
+    - cat /etc/ssl/certs/ca-certificates.crt /kscsc-ca/root_ca.crt > /ca-bundle/ca-certificates.crt
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  volumeMounts:
+    - name: kscsc-ca
+      mountPath: /kscsc-ca
+      readOnly: true
+    - name: ca-bundle
+      mountPath: /ca-bundle
+{{- end }}
+
+{{/*
+Trusted CA: volumes, mounts and env for the application container.
+*/}}
+{{- define "news-bot.trustedCA.volumes" -}}
+- name: kscsc-ca
+  configMap:
+    name: {{ include "news-bot.fullname" . }}-trusted-ca
+- name: ca-bundle
+  emptyDir:
+    sizeLimit: 8Mi
+{{- end }}
+
+{{- define "news-bot.trustedCA.volumeMounts" -}}
+- name: ca-bundle
+  mountPath: /etc/ssl/certs/ca-certificates.crt
+  subPath: ca-certificates.crt
+  readOnly: true
+{{- end }}
+
+{{- define "news-bot.trustedCA.env" -}}
+- name: SSL_CERT_FILE
+  value: /etc/ssl/certs/ca-certificates.crt
+- name: REQUESTS_CA_BUNDLE
+  value: /etc/ssl/certs/ca-certificates.crt
+{{- end }}
+
+{{/*
 Pod template: common nodeSelector / tolerations / affinity
 */}}
 {{- define "news-bot.scheduling" -}}

@@ -1,0 +1,7 @@
+apiVersion: v2
+name: openvas
+description: Greenbone Community Edition (OpenVAS) vulnerability scanner
+type: application
+version: 0.1.0
+# Tracks the Greenbone feed release, not any single component version.
+appVersion: "24.10"

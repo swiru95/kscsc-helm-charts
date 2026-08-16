@@ -1,0 +1,52 @@
+# Example overrides for the openvas chart.
+# Copy to the private config repo as config/values/openvas__openvas.yaml and
+# fill in the real password — never commit a real one to this public repo.
+
+gateway:
+  hostname: openvas.kscsc.local
+  serviceName: openvas-openvas
+  servicePort: 8080
+
+adminUser:
+  enabled: true
+  username: admin
+  # Either set this...
+  password: "CHANGE-ME"
+  # ...or create the Secret yourself and reference it instead:
+  # existingSecret: "openvas-admin"
+  # passwordKey: password
+  forcePassword: false
+
+# local-path cannot expand a PVC after creation, so size these generously up
+# front. The node backing kscsc.local/role=cpu had ~90 GB free at install time.
+persistence:
+  sizes:
+    scapData: 15Gi
+    psqlData: 20Gi
+    vtData: 10Gi
+    gvmdData: 5Gi
+    notusData: 2Gi
+    certData: 2Gi
+    dataObjects: 1Gi
+
+resources:
+  gvmd:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      memory: 8Gi
+  ospdOpenvas:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      memory: 6Gi
+
+nodeSelector:
+  kscsc.local/role: cpu
+
+# Turn these on only when debugging the scanner.
+extras:
+  openvasLogTail: false
+  gvmTools: false

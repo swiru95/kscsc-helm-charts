@@ -1,0 +1,38 @@
+Thank you for installing {{ .Chart.Name }} (Greenbone Community Edition, feed {{ .Values.feedRelease }}).
+
+  Web UI:  https://{{ .Values.gateway.hostname }}
+
+FIRST START IS SLOW. Expect roughly 30-60 minutes before the UI is usable:
+about 2.7 GB of images pull first (kubelet serialises image pulls by default),
+then gvmd imports the SCAP and CERT feeds into Postgres before it will answer.
+The pod reports Ready as soon as nginx is up, which is well before that.
+
+Watch progress:
+  kubectl -n {{ .Release.Namespace }} get pod -l app={{ include "openvas.name" . }} -w
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "openvas.fullname" . }} -c gvmd
+
+{{ if .Values.adminUser.enabled -}}
+Login: {{ .Values.adminUser.username }}
+{{ if .Values.adminUser.existingSecret -}}
+Password from Secret "{{ .Values.adminUser.existingSecret }}" (key: {{ .Values.adminUser.passwordKey }}).
+{{- else -}}
+Password from Secret "{{ include "openvas.fullname" . }}-admin" (key: {{ .Values.adminUser.passwordKey }}):
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "openvas.fullname" . }}-admin \
+    -o jsonpath='{.data.{{ .Values.adminUser.passwordKey }}}' | base64 -d; echo
+{{- end }}
+
+The bootstrap-admin container creates that account once gvmd is up. Check it with:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "openvas.fullname" . }} -c bootstrap-admin
+{{- else -}}
+No admin account is created (adminUser.enabled=false). Once gvmd is up, make one:
+  kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "openvas.fullname" . }} -c gvmd -- \
+    gvmd --create-user=admin --password='<choose-one>'
+{{- end }}
+
+SCANNING THE LAN
+This pod runs on the cluster network, so traffic to {{ .Values.gateway.hostname }}'s
+subnet is SNAT'd to the node's address. TCP, UDP, ICMP and raw/SYN probes all work.
+ARP ping does not — the pod is not on the LAN's L2 segment. Greenbone ORs its alive
+tests, so hosts answering ICMP or any TCP port are still discovered; a host that
+blocks ICMP *and* has no open TCP port will be missed. If you hit that, set the
+target's Alive Test to "Consider Alive" in the UI.

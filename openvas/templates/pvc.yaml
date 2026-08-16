@@ -1,0 +1,30 @@
+{{- if .Values.persistence.enabled }}
+{{- $fullname := include "openvas.fullname" . }}
+{{- $name := include "openvas.name" . }}
+{{- range $claim := list
+      (dict "suffix" "vt-data"      "size" $.Values.persistence.sizes.vtData)
+      (dict "suffix" "notus-data"   "size" $.Values.persistence.sizes.notusData)
+      (dict "suffix" "scap-data"    "size" $.Values.persistence.sizes.scapData)
+      (dict "suffix" "cert-data"    "size" $.Values.persistence.sizes.certData)
+      (dict "suffix" "data-objects" "size" $.Values.persistence.sizes.dataObjects)
+      (dict "suffix" "gvmd-data"    "size" $.Values.persistence.sizes.gvmdData)
+      (dict "suffix" "psql-data"    "size" $.Values.persistence.sizes.psqlData)
+}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fullname }}-{{ $claim.suffix }}
+  labels:
+    app: {{ $name }}
+spec:
+  accessModes:
+{{ toYaml $.Values.persistence.accessModes | indent 4 }}
+  resources:
+    requests:
+      storage: {{ $claim.size }}
+{{- if $.Values.persistence.storageClass }}
+  storageClassName: "{{ $.Values.persistence.storageClass }}"
+{{- end }}
+{{- end }}
+{{- end }}
