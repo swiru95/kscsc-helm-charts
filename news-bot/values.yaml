@@ -1,7 +1,7 @@
 # -- Image -------------------------------------------------------------------
 image:
   repository: ghcr.io/swiru95/news-bot
-  tag: 2b8ca4b13004f3b238d9a84bea4e72e2e873e0a2
+  tag: f79722356b04878702ef60eb57f997b3a65342df
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
@@ -77,12 +77,33 @@ config:
 # endpoint (/v1/chat/completions) with an Authorization header for authentication.
 ollama:
   provider: "ollama"
-  model: "Qwen/Qwen3-32B-GGUF:Q4_K_M"
+  # Model *preset* name served by the llama-server router (/etc/llama-server/models.ini),
+  # not a HuggingFace repo: the router resolves the preset to its hf-repo itself.
+  # Presets: Coder (Qwen3.6-35B-A3B, 256k ctx), Thinker (Qwen3.5-122B-A10B, 64k ctx),
+  # Bielik (Bielik-11B-v3.0, 32k ctx). Check with GET /v1/models before changing.
+  model: "Thinker"
+  # Optional second preset for the mechanical big-batch stages (refine / filter /
+  # categorize — see llm.py _FAST_TASKS). Those are strict-JSON tasks over ~70
+  # clusters at once: the largest context we build and the one Thinker's 64k ctx
+  # would overflow first. Coder is a 256k-ctx MoE and benchmarked 6-8x faster on
+  # them with no measured quality loss, so the judgment stages (source hunting,
+  # verify, summarize, the LinkedIn post) keep the main model above.
+  # Empty = run every stage on `model`.
+  fastModel: "Coder"
   apiUrl: "https://llama.kscsc.local:8443/v1/chat/completions"
-  # Full Authorization header value, e.g. "Bearer <key>". llama-server runs with
-  # --api-key-file and rejects unauthenticated calls with 401. Supply at deploy
-  # time (--set ollama.authHeader=...); keep empty in git. Also written to the
-  # Secret as authSecretKey when secrets.create is true.
+  # Raw llama-server API key (no "Bearer " prefix). Both entry points read it from
+  # the OLLAMA_API_KEY env var and add the scheme themselves. Prefer this over
+  # authHeader below: this value only reaches the pods via the Secret, whereas
+  # authHeader is rendered into the ConfigMap's config.yaml in clear text.
+  # Supply at deploy time (--set ollama.apiKey=...); keep empty in git.
+  apiKey: ""
+  # Key inside the Secret (secrets.existingSecret / the created one) holding the
+  # raw API key; mounted as OLLAMA_API_KEY in both CronJobs. The env var is
+  # optional, so the chart still renders if the key is absent.
+  apiKeySecretKey: "llm-api-key"
+  # Full Authorization header value, e.g. "Bearer <key>". Legacy escape hatch for
+  # a non-Bearer scheme — it takes precedence over apiKey in the pipeline, but the
+  # linkedin-feeder ignores it entirely. Leave empty and use apiKey.
   authHeader: ""
   # Cannot be true yet, even though trustedCA puts the KSCSC root in the bundle:
   # that root carries no keyUsage extension, and this image is on Python 3.13,
@@ -94,12 +115,30 @@ ollama:
   webSearch: false
   ollamaBaseUrl: "http://localhost:11434"
   maxRetries: 1
-  # LinkedIn generation and source summarization can take longer on the in-cluster model.
-  timeout: 600
-  # Key inside the existing Secret (secrets.existingSecret) that holds the full
-  # Authorization header for the LinkedIn feeder; mounted as LLM_AUTH_HEADER.
-  # The env var is optional, so the chart still renders if the key is absent.
-  authSecretKey: "llm-auth-header"
+  # LinkedIn generation and source summarization can take longer on the in-cluster
+  # model; Thinker is a 122B MoE, so single-shot stages are slower than on Coder.
+  timeout: 1200
+
+# -- Post illustration (Google AI / Gemini image API) ------------------------
+# The pipeline writes the image *subject* into news.json; the feeder wraps it in a
+# fixed style/safety contract and renders it through Google's hosted image API.
+# Entirely cosmetic: with no key, a quota error or an unusable response the post
+# still publishes as text. Needs egress to generativelanguage.googleapis.com.
+googleAI:
+  enabled: true
+  # Google AI Studio API key. Written to the Secret as apiKeySecretKey when
+  # secrets.create is true; otherwise add that key to the existing Secret.
+  # Supply at deploy time (--set googleAI.apiKey=...); keep empty in git.
+  apiKey: ""
+  apiKeySecretKey: "google-ai-api-key"
+  # Empty values fall back to the image's own defaults
+  # (gemini-3.1-flash-image, 1:1, 1K).
+  imageModel: "gemini-3.1-flash-image"
+  # LinkedIn renders feed images up to 1.91:1, so 16:9 fills the column width with
+  # almost no crop. 2K (~2048px wide) clears LinkedIn's 1200px recommendation with
+  # headroom; the API's other sizes are 1K and 4K.
+  aspectRatio: "16:9"
+  imageSize: "2K"
 
 # -- Private CA trust --------------------------------------------------------
 # llama-server presents a cert from the in-cluster step-ca, whose root is in no

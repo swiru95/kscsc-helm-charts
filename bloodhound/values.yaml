@@ -44,7 +44,7 @@ appdb:
     port: 5432
     targetPort: 5432
   volumes:
-    pvcEnabled: false
+    pvcEnabled: true
     persistentVolumeClaim:
       claimName: bloodhound-postgres-pvc
       size: "2Gi"  # Configurable storage size
@@ -82,18 +82,10 @@ graphdb:
     timeoutSeconds: 5
     failureThreshold: 5
   volumes:
-    pvcEnabled: false
+    pvcEnabled: true
     persistentVolumeClaim:
       claimName: graphdb-neo4j-data-pvc
       size: "2Gi"  # Configurable storage size
-  ingress:
-    enabled: false
-    host: graphdb.example.com
-    path: /
-  tls:
-    enabled: true
-    customCert: false
-    certSecret: graphdb-tls
 
 bloodhound:
   name: bloodhound

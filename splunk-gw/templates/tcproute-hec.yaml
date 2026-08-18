@@ -1,0 +1,13 @@
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ .Release.Name }}-hec
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: tcp-hec
+  rules:
+    - backendRefs:
+        - name: {{ .Values.service.hec.serviceName }}
+          port: {{ .Values.service.hec.targetPort }}

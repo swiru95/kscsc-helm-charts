@@ -136,12 +136,17 @@ spec:
                       optional: true
                 - name: LINKEDIN_TOKEN_CACHE_PATH
                   value: "/data/output/.linkedin_tokens.json"
-                - name: LLM_AUTH_HEADER
+                {{- include "news-bot.llmAuthEnv" . | nindent 16 }}
+                {{- if .Values.googleAI.enabled }}
+                # Post illustration via the Google AI image API. Optional by
+                # design: with no key the feeder logs why and posts text only.
+                - name: GOOGLE_AI_API_KEY
                   valueFrom:
                     secretKeyRef:
                       name: {{ include "news-bot.secretName" . }}
-                      key: {{ .Values.ollama.authSecretKey }}
+                      key: {{ .Values.googleAI.apiKeySecretKey }}
                       optional: true
+                {{- end }}
                 {{- if .Values.trustedCA.enabled }}
                 {{- include "news-bot.trustedCA.env" . | nindent 16 }}
                 {{- end }}

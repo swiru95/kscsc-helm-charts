@@ -18,9 +18,15 @@ gateway:
       allowedRoutes:
         namespaces:
           from: All
-    - name: tcp
+    - name: tcp-forwarder
       protocol: TCP
       port: 9997
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: tcp-hec
+      protocol: TCP
+      port: 8088
       allowedRoutes:
         namespaces:
           from: All
@@ -92,4 +98,5 @@ certificate:
     - ollama.kscsc.local
     - openui.kscsc.local
     - ca.kscsc.local
+    - splunk.kscsc.local
     # Add a hostname here for every new HTTPRoute you add

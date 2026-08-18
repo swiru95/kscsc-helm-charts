@@ -81,6 +81,31 @@ Feeds ConfigMap name (inline-created or existing)
 {{- end }}
 
 {{/*
+LLM server base URL. The feeder wants the host root (it appends /v1/chat/completions
+and /v1/models itself), while the pipeline's config.yaml wants the full endpoint —
+so derive the former from the latter and keep a single source of truth in values.
+*/}}
+{{- define "news-bot.llmHost" -}}
+{{- .Values.ollama.apiUrl | trimSuffix "/v1/chat/completions" | trimSuffix "/" }}
+{{- end }}
+
+{{/*
+LLM API key env. Both entry points read OLLAMA_API_KEY and add the "Bearer "
+themselves. Optional so the chart still renders before the key is added to the
+Secret; without it llama-server answers 401.
+*/}}
+{{- define "news-bot.llmAuthEnv" -}}
+{{- if .Values.ollama.apiKeySecretKey }}
+- name: OLLAMA_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "news-bot.secretName" . }}
+      key: {{ .Values.ollama.apiKeySecretKey }}
+      optional: true
+{{- end }}
+{{- end }}
+
+{{/*
 Trusted CA: init container that appends the private root to the image's CA
 bundle. Appends rather than replaces — the pipeline also fetches RSS over
 public HTTPS, which still needs the Mozilla roots. Shared by both CronJobs.

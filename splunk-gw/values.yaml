@@ -1,0 +1,37 @@
+# Envoy Gateway routing for the Splunk stack.
+#
+# This chart deliberately holds ONLY the HTTPRoutes and TCPRoutes. Splunk itself
+# comes from the local splunk chart — see README.md for the install order.
+#
+# The upstream chart only knows how to emit an Ingress, and this cluster has no
+# Ingress controller: Envoy Gateway terminates TLS at 192.168.95.51 and routes
+# by Gateway API HTTPRoute. So upstream's webui.ingress stays disabled and the
+# route lives here instead, matching how openvas and step-ca are wired.
+
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: splunk.kscsc.local
+
+  # Service published by the splunk chart.
+  serviceName: splunk-web
+  servicePort: 8000
+
+  # Serve the UI on HTTPS only and 301 plain HTTP up to it.
+  httpDirect: false
+
+  # The Splunk web UI can be slow to respond; the Envoy default of 60s
+  # would cut long-running queries and make the dashboard look broken.
+  timeout: 300s
+
+service:
+  forwarder:
+    serviceName: splunk-forwarder
+    servicePort: 9997
+    targetPort: 9997
+  hec:
+    serviceName: splunk-hec
+    servicePort: 8088
+    targetPort: 8088

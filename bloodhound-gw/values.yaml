@@ -1,0 +1,22 @@
+# Envoy Gateway routing for BloodHound.
+#
+# This chart deliberately holds ONLY the HTTPRoutes. BloodHound itself
+# comes from the local bloodhound chart — see README.md for the install order.
+
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: bloodhound.kscsc.local
+
+  # Service published by the bloodhound chart.
+  serviceName: bloodhound-service
+  servicePort: 8080
+
+  # Serve the UI on HTTPS only and 301 plain HTTP up to it.
+  httpDirect: false
+
+  # BloodHound can be slow to load reports; the Envoy default of 60s
+  # would cut long-running queries and make the dashboard look broken.
+  timeout: 120s

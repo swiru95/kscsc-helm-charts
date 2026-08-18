@@ -1,5 +1,6 @@
 # Example values - real deployment values live in the private config/ submodule.
-# Credential fields are blanked; supply them at deploy time.
+# Credential fields are blanked; supply them at deploy time, e.g.
+#   --set ollama.apiKey=... --set googleAI.apiKey=...
 
 affinity: {}
 config:
@@ -21,10 +22,17 @@ feeds:
   existingConfigMap: news-bot-feeds
   inline: ''
 fullnameOverride: ''
+googleAI:
+  apiKey: ''
+  apiKeySecretKey: google-ai-api-key
+  aspectRatio: '16:9'
+  enabled: true
+  imageModel: gemini-3.1-flash-image
+  imageSize: 2K
 image:
   pullPolicy: IfNotPresent
   repository: ghcr.io/swiru95/news-bot
-  tag: 2b8ca4b13004f3b238d9a84bea4e72e2e873e0a2
+  tag: f79722356b04878702ef60eb57f997b3a65342df
 imagePullSecrets:
 - name: ghcr-pull-secret
 linkedin:
@@ -69,16 +77,17 @@ newsbot:
   ttlSecondsAfterFinished: 3600
 nodeSelector: {}
 ollama:
+  apiKey: ''
+  apiKeySecretKey: llm-api-key
   apiUrl: https://llama.kscsc.local:8443/v1/chat/completions
   authHeader: ''
-  authSecretKey: ''
   authSource: claude_cli
-  host: http://ollama-ollama.ollama.svc.cluster.local:11434
+  fastModel: Coder
   maxRetries: 1
-  model: Qwen/Qwen3-32B-GGUF:Q4_K_M
+  model: Thinker
   ollamaBaseUrl: http://localhost:11434
   provider: ollama
-  timeout: 600
+  timeout: 1200
   tlsVerify: false
   webSearch: false
 persistence:
@@ -91,7 +100,7 @@ podLabels:
   app: news-bot
 secrets:
   create: false
-  existingSecret: ''
+  existingSecret: news-bot-secrets
   linkedin:
     clientId: ''
     clientSecret: ''
@@ -104,3 +113,9 @@ tolerations:
 - effect: NoSchedule
   key: nvidia.com/gpu
   operator: Exists
+trustedCA:
+  enabled: true
+  pem: ''
+  sourceConfigMap: step-ca-step-certificates-certs
+  sourceKey: root_ca.crt
+  sourceNamespace: step-ca

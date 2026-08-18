@@ -1,0 +1,6 @@
+apiVersion: v2
+name: splunk-gw
+description: Envoy Gateway routing for the Splunk stack
+type: application
+version: 0.1.0
+appVersion: "9.2.1"

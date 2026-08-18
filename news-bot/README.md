@@ -40,8 +40,8 @@ This chart lives in the infrastructure repository. The application image and sou
                          │  │  news-bot-config   │  │  news-bot-secrets       │    │
                          │  │  ┌────────────────┐│  │  ┌───────────────────┐  │    │
                          │  │  │ config.yaml    ││  │  │ CLIENT_ID         │  │    │
-                         │  │  │ LLM_API_URL    ││  │  │ CLIENT_SECRET     │  │    │
-                         │  │  │ LLM_MODEL      ││  │  │ ORG_URN           │  │    │
+                         │  │  │ OLLAMA_HOST    ││  │  │ CLIENT_SECRET     │  │    │
+                         │  │  │ OLLAMA_MODEL   ││  │  │ ORG_URN           │  │    │
                          │  │  │ ORG_NAME       ││  │  │ ORG_TOKEN         │  │    │
                          │  │  │ ORG_URL        ││  │  │ ORG_REFRESH_TOKEN │  │    │
                          │  │  └────────────────┘│  │  │ PERSONAL_TOKEN    │  │    │
@@ -80,45 +80,72 @@ The current chart defaults use a pinned GHCR image and the llama-server (llama.c
 endpoint at `https://llama.kscsc.local:8443/v1/chat/completions`. That endpoint
 requires an API key, needed by both the main news-bot pipeline and the linkedin-feeder.
 
-The API key can be supplied in two ways:
+The API key can be supplied in two ways. Both entry points read the **raw** key (no
+`Bearer ` prefix) from `OLLAMA_API_KEY` and add the scheme themselves.
 
 **Chart-managed Secret** (`secrets.create=true`):
 ```bash
 helm install news-bot ./news-bot \
   --set secrets.create=true \
-  --set ollama.authHeader="Bearer <key>"
+  --set ollama.apiKey="<key>"
 ```
 
 **Pre-existing Secret** (the default, `secrets.existingSecret: news-bot-secrets`):
-Add the key directly to the secret:
-```bash
-kubectl create secret generic news-bot-secrets -n news-bot \
-  --from-literal=llm-auth-header="Bearer <key>" \
-  --from-literal=linkedin-client-id=<...> \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-**Warning:** this form of `kubectl apply` replaces the Secret's contents, so you must
-include the existing LinkedIn keys in the same command. A safer alternative:
+add the key directly to the Secret — `ollama.apiKey` is ignored when the chart does
+not own the Secret.
 ```bash
 kubectl patch secret news-bot-secrets -n news-bot \
-  -p '{"stringData":{"llm-auth-header":"Bearer <key>"}}'
+  -p '{"stringData":{"llm-api-key":"<key>"}}'
 ```
 
-In either case, the key is deliberately empty in `values.yaml` so it is never committed.
+Avoid the `kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -`
+form unless you list every existing key in the same command: it replaces the
+Secret's contents rather than merging.
 
-### Migrating the API key out of the ConfigMap
+In either case the key is deliberately empty in `values.yaml` so it is never committed.
 
-During the transition, `--set ollama.authHeader=...` renders the key into BOTH the Secret and
-the ConfigMap as `auth_header` (for backward compatibility with the main pipeline's config.yaml).
-Once the Secret key is provisioned in the cluster, upgrade without `--set ollama.authHeader`:
+`ollama.authHeader` is the legacy escape hatch for a non-Bearer scheme. It is rendered
+into the ConfigMap's `config.yaml` in clear text and is honoured only by the pipeline —
+the linkedin-feeder ignores it. Leave it empty and use `ollama.apiKey`.
+
+### Model selection
+
+`ollama.model` is a **preset name** served by the llama-server router
+(`/etc/llama-server/models.ini` on `llama.kscsc.local`), not a HuggingFace repo — the
+router resolves the preset to its `hf-repo` itself. Current presets:
+
+| Preset | Model | ctx |
+|---|---|---|
+| `Coder` | Qwen3.6-35B-A3B | 262144 (2 slots) |
+| `Thinker` | Qwen3.5-122B-A10B | 65536 |
+| `Bielik` | Bielik-11B-v3.0-Instruct | 32768 |
+
+The pipeline can use two at once: `ollama.model` for the judgment stages and
+`ollama.fastModel` for the mechanical big-batch ones. Confirm what the server
+actually serves before switching:
 
 ```bash
-helm upgrade news-bot ./news-bot --reuse-values
+curl -sk -H "Authorization: Bearer <key>" https://llama.kscsc.local:8443/v1/models
 ```
 
-The ConfigMap's `auth_header` line then disappears while the environment variables keep both jobs
-working off the Secret.
+## Post illustration (Google AI)
+
+The linkedin-feeder can attach a generated illustration to the daily post. The image
+*subject* is written by the pipeline into `news.json` (`linkedin_post.image_prompt`);
+the feeder wraps it in a fixed style/safety contract and renders it through Google's
+hosted image API. The feature is cosmetic by design — no key, a quota error or an
+unusable response all publish the post as text.
+
+It needs the key in the same Secret:
+
+```bash
+kubectl patch secret news-bot-secrets -n news-bot \
+  -p '{"stringData":{"google-ai-api-key":"<google-ai-studio-key>"}}'
+```
+
+Turn it off with `googleAI.enabled=false` (drops the env var and sets
+`LINKEDIN_POST_IMAGE=false`). The cluster must be able to reach
+`generativelanguage.googleapis.com`.
 
 ## Install the chart
 
@@ -175,17 +202,32 @@ The chart renders the application `config.yaml` into a ConfigMap. The main value
 - `config.dropNonEnglish` -> `settings.drop_non_english`
 - `config.stateRetentionDays` -> `settings.state_retention_days`
 - `ollama.provider` -> `settings.llm.provider`
+- `ollama.model` -> `settings.llm.model` (judgment stages: sources, verify,
+  summarize, LinkedIn post)
+- `ollama.fastModel` -> `settings.llm.fast_model` (mechanical stages: refine,
+  filter, categorize; omitted from `config.yaml` when empty)
 - `ollama.authSource` -> `settings.llm.auth_source`
 - `ollama.webSearch` -> `settings.llm.web_search`
 - `ollama.ollamaBaseUrl` -> `settings.llm.ollama_base_url`
 
 Environment variables passed to the linkedin-feeder CronJob:
 
-- `ollama.apiUrl` -> `LLM_API_URL`
-- `ollama.model` -> `LLM_MODEL`
-- `ollama.timeout` -> `LLM_TIMEOUT`
-- `ollama.tlsVerify` -> `LLM_TLS_VERIFY`
-- `ollama.authSecretKey` -> Secret key mounted as `LLM_AUTH_HEADER`
+- `ollama.apiUrl` -> `OLLAMA_HOST` (the `/v1/chat/completions` suffix is trimmed — the
+  feeder appends its own paths)
+- `ollama.model` -> `OLLAMA_MODEL`
+- `ollama.tlsVerify` -> `OLLAMA_TLS_VERIFY`
+- `googleAI.enabled` -> `LINKEDIN_POST_IMAGE`
+- `googleAI.imageModel` -> `GOOGLE_IMAGE_MODEL`
+- `googleAI.aspectRatio` -> `IMAGE_ASPECT_RATIO`
+- `googleAI.imageSize` -> `IMAGE_SIZE`
+
+Secret keys mounted into both CronJobs:
+
+- `ollama.apiKeySecretKey` -> `OLLAMA_API_KEY` (both jobs)
+- `googleAI.apiKeySecretKey` -> `GOOGLE_AI_API_KEY` (linkedin-feeder only)
+
+Note that `ollama.timeout` reaches the pipeline through `config.yaml` only; the feeder
+uses its own fixed request timeout.
 
 Current defaults match the tuned live deployment profile: 24h article window, `topN: 5`, non-English filtering enabled, web research disabled, source validation disabled, and the llama-server endpoint.
 

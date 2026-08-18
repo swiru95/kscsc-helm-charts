@@ -20,6 +20,7 @@ hosts:
     - openui.kscsc.local
     - ca.kscsc.local
     - splunk.kscsc.local
+    - bloodhound.kscsc.local
     - auth.kscsc.local
     - openvas.kscsc.local
     - falco.kscsc.local

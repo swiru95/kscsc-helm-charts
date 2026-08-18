@@ -45,9 +45,13 @@ service:
     port: 8000
     targetPort: "web"
   forwarder:
-    type: NodePort
+    type: ClusterIP
     port: 9997
     targetPort: "forwarder"
+  hec:
+    type: ClusterIP
+    port: 8088
+    targetPort: "hec"
 
 ingress:
   enabled: false

@@ -57,14 +57,10 @@ spec:
                 capabilities:
                   drop: ["ALL"]
               env:
-                # Allows the operator to migrate the API key out of the ConfigMap;
-                # the app prefers this env var over the auth_header value in config.yaml.
-                - name: LLM_AUTH_HEADER
-                  valueFrom:
-                    secretKeyRef:
-                      name: {{ include "news-bot.secretName" . }}
-                      key: {{ .Values.ollama.authSecretKey }}
-                      optional: true
+                # Keeps the llama-server key out of the rendered config.yaml: the
+                # pipeline falls back to this env var whenever ollama.authHeader
+                # is empty, which is the intended configuration.
+                {{- include "news-bot.llmAuthEnv" . | nindent 16 }}
                 {{- if .Values.trustedCA.enabled }}
                 {{- include "news-bot.trustedCA.env" . | nindent 16 }}
                 {{- end }}

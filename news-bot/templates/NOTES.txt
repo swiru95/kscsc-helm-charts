@@ -28,6 +28,29 @@ CronJobs created:
      -p '{"stringData":{"linkedin-client-secret":"YOUR_SECRET"}}'
 {{- end }}
 
+LLM backend: {{ include "news-bot.llmHost" . }} (model preset: {{ .Values.ollama.model }})
+{{- if not .Values.ollama.apiKey }}
+{{- if not .Values.ollama.authHeader }}
+
+!! The llama-server API key is not set in values. Both CronJobs read it from the
+   Secret key "{{ .Values.ollama.apiKeySecretKey }}"; without it llama-server answers 401:
+
+   kubectl patch secret {{ include "news-bot.secretName" . }} -n {{ .Release.Namespace }} \
+     -p '{"stringData":{"{{ .Values.ollama.apiKeySecretKey }}":"YOUR_KEY"}}'
+{{- end }}
+{{- end }}
+
+{{- if .Values.googleAI.enabled }}
+
+Post illustration: ENABLED ({{ .Values.googleAI.imageModel }}, {{ .Values.googleAI.aspectRatio }}).
+{{- if not .Values.googleAI.apiKey }}
+   Inert until the Google AI key is in the Secret (the post then publishes as text only):
+
+   kubectl patch secret {{ include "news-bot.secretName" . }} -n {{ .Release.Namespace }} \
+     -p '{"stringData":{"{{ .Values.googleAI.apiKeySecretKey }}":"YOUR_KEY"}}'
+{{- end }}
+{{- end }}
+
 Manual run:
   kubectl create job -n {{ .Release.Namespace }} \
     news-bot-manual-$(date +%s) \
