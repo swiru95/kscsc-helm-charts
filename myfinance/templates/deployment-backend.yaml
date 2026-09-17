@@ -75,6 +75,39 @@ spec:
             # docker-compose passes it too.
             - name: MYFINANCE_CORS_ORIGINS
               value: {{ toJson .Values.cors.origins | quote }}
+{{- if .Values.llm.enabled }}
+            - name: MYFINANCE_LLM_BASE_URL
+              value: {{ .Values.llm.baseUrl | quote }}
+            - name: MYFINANCE_LLM_MODEL
+              value: {{ .Values.llm.model | quote }}
+            - name: MYFINANCE_LLM_TRANSLATE_MODEL
+              value: {{ .Values.llm.translateModel | quote }}
+            - name: MYFINANCE_LLM_VERIFY_TLS
+              value: {{ .Values.llm.tls.verify | quote }}
+  {{- if or .Values.llm.tls.caConfigMap.enabled .Values.llm.tls.caBundle }}
+            - name: MYFINANCE_LLM_CA_BUNDLE
+              value: {{ printf "%s/ca-bundle.crt" .Values.llm.tls.mountPath | quote }}
+  {{- end }}
+  {{- if and .Values.llm.mtls.enabled .Values.postgres.enabled }}
+            # The pod's PostgreSQL identity, reused. Read fresh on each request
+            # so an autocert renewal is picked up without a restart.
+            - name: MYFINANCE_LLM_CLIENT_CERT
+              value: {{ .Values.llm.mtls.certFile | quote }}
+            - name: MYFINANCE_LLM_CLIENT_KEY
+              value: {{ .Values.llm.mtls.keyFile | quote }}
+  {{- end }}
+            - name: MYFINANCE_LLM_TIMEOUT
+              value: {{ .Values.llm.timeout | quote }}
+  {{- if or .Values.llm.existingSecret .Values.llm.apiKey }}
+            # Never spelled out in the manifest: the key reaches the process
+            # from the Secret, so `kubectl get deploy -o yaml` does not leak it.
+            - name: MYFINANCE_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.llm.existingSecret | default (printf "%s-llm" (include "myfinance.fullname" .)) }}
+                  key: {{ .Values.llm.secretKey }}
+  {{- end }}
+{{- end }}
           readinessProbe:
             httpGet:
               path: /api/health
@@ -88,6 +121,11 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 30
           volumeMounts:
+{{- if and .Values.llm.enabled (or .Values.llm.tls.caConfigMap.enabled .Values.llm.tls.caBundle) }}
+            - name: llm-ca
+              mountPath: {{ .Values.llm.tls.mountPath }}
+              readOnly: true
+{{- end }}
 {{- if .Values.postgres.enabled }}
             # NOTE: /var/run/autocert.step.sm is mounted into every container
             # by autocert's webhook. Declaring it here too would be a duplicate
@@ -101,6 +139,11 @@ spec:
           resources:
 {{ toYaml .Values.backend.resources | indent 12 }}
       volumes:
+{{- if and .Values.llm.enabled (or .Values.llm.tls.caConfigMap.enabled .Values.llm.tls.caBundle) }}
+        - name: llm-ca
+          configMap:
+            name: {{ include "myfinance.fullname" . }}-llm-ca
+{{- end }}
 {{- if .Values.postgres.enabled }}
         - name: pgkey
           emptyDir: {}

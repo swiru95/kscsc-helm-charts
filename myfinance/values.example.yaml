@@ -1,7 +1,7 @@
 # Example values - real deployment values live in the private config/ submodule.
-# MyFinance holds no credentials of its own: PostgreSQL authenticates with
-# certificates issued by the in-cluster step-ca, so the only deploy-time input
-# is the image tag.
+# PostgreSQL authenticates with certificates issued by the in-cluster step-ca,
+# so it needs no password. The one credential MyFinance does take is the
+# llama-server API key behind the Report page - kept in a Secret, never here.
 affinity: {}
 backend:
   image:
@@ -51,6 +51,37 @@ networkPolicy:
     namespace: envoy-gateway-system
     podLabels:
       app.kubernetes.io/name: envoy
+llm:
+  enabled: true
+  baseUrl: https://llama.kscsc.local:8443
+  model: Thinker
+  translateModel: Bielik
+  # The key is deliberately NOT in this file. Create the Secret once, out of
+  # band, and the chart mounts it:
+  #
+  #   kubectl create secret generic myfinance-llm -n myfinance \
+  #     --from-literal=llm-api-key="$(ssh gx10 sudo cat /etc/llama-server/api.key)"
+  #
+  # Setting `apiKey` here instead would work, but would put a root-equivalent
+  # inference credential into git.
+  apiKey: ""
+  existingSecret: myfinance-llm
+  secretKey: llm-api-key
+  tls:
+    verify: true
+    caConfigMap:
+      enabled: true
+      namespace: step-ca
+      name: step-ca-step-certificates-certs
+      rootKey: root_ca.crt
+      intermediateKey: intermediate_ca.crt
+    caBundle: ""
+    mountPath: /etc/myfinance/llm-ca
+  mtls:
+    enabled: true
+    certFile: /var/run/autocert.step.sm/site.crt
+    keyFile: /var/run/autocert.step.sm/site.key
+  timeout: 900
 nodeSelector: {}
 postgres:
   enabled: true

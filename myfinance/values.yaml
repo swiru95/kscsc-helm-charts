@@ -75,6 +75,86 @@ pvc:
   # optional explicit claim name; if empty, chart will create one based on release name
   name: ""
 
+# --- Wallet assessment (llama-server on gx10) ------------------------------
+# The Report page asks a local model to write an assessment of the portfolio.
+# Nothing leaves the lab: llama.kscsc.local is the GPU box, resolved by the
+# static CoreDNS entry in the coreDNS chart.
+#
+# Leave apiKey empty and the feature stays switched off - the backend reports
+# itself unconfigured and the page says so, rather than failing per request.
+# Provide the key through a values file that is not committed, or point
+# existingSecret at a Secret created out of band.
+llm:
+  enabled: true
+  baseUrl: https://llama.kscsc.local:8443
+  # Writes the assessment. Reasoning model; the router loads one model at a
+  # time, so the first request after a switch waits on ~76 GB being paged in.
+  model: Thinker
+  # Translates a finished English report into Polish. A Polish-native model,
+  # far better at it than asking the author model to write Polish directly.
+  translateModel: Bielik
+  #
+  # Still required even with mutual TLS below. The certificate authenticates
+  # this backend to the llama-server router, but the router does not forward
+  # that identity to the model child it proxies inference to, so a certificate
+  # alone gets 401 on /v1/chat/completions (measured 2026-09-17).
+  #
+  # Scope this key to the least-privilege `service` role in llama-server's
+  # auth_policy, never the shared admin key: the certificate caps what this
+  # pod may do, and the key should not be able to exceed it.
+  apiKey: ""
+  # Use a Secret that already exists instead of creating one from apiKey above.
+  existingSecret: ""
+  secretKey: llm-api-key
+
+  tls:
+    # Verify llama-server's certificate rather than trusting it blindly. On by
+    # default because it works: see caConfigMap below for why this chart can
+    # verify where news-bot could not.
+    verify: true
+    # Build the CA bundle from step-ca's ConfigMap at install time. Must supply
+    # BOTH the root and the intermediate - the root has no keyUsage extension
+    # and Python 3.13's strict verification rejects it as an anchor, while the
+    # intermediate is accepted. See templates/configmap-llm-ca.yaml.
+    caConfigMap:
+      enabled: true
+      namespace: step-ca
+      name: step-ca-step-certificates-certs
+      rootKey: root_ca.crt
+      intermediateKey: intermediate_ca.crt
+    # Pin the bundle literally instead of looking it up (takes precedence).
+    caBundle: ""
+    # Where the assembled bundle is mounted in the backend container.
+    mountPath: /etc/myfinance/llm-ca
+
+  # --- Mutual TLS ----------------------------------------------------------
+  # The backend pod already carries an autocert-issued identity for PostgreSQL,
+  # and that certificate has clientAuth in its EKU, so the same pair proves the
+  # pod's identity to llama-server. No second certificate is needed and nothing
+  # extra is mounted: these are the paths autocert already writes to.
+  #
+  # Safe to leave on before the server asks for a client certificate - a server
+  # that does not request one never sees it.
+  #
+  # llama-server is configured (2026-09-17) to map this pod's SAN
+  #
+  #   myfinance-app.myfinance.svc.cluster.local
+  #
+  # to its least-privilege `service` role. Where both a certificate and a key
+  # are presented the ROUTER authorizes on the certificate, so this is what
+  # actually caps the pod's privileges - verified by /slots returning 403 even
+  # when an admin-scoped key is sent alongside.
+  #
+  # Requires postgres.enabled (that is what puts autocert on the pod).
+  mtls:
+    enabled: true
+    certFile: /var/run/autocert.step.sm/site.crt
+    keyFile: /var/run/autocert.step.sm/site.key
+  # A cold start of the 122B model plus generation. The HTTP request that
+  # triggers it returns immediately - this bounds the worker thread, not the
+  # browser - so a generous value costs nothing.
+  timeout: 900
+
 nodeSelector: {}
 tolerations:
   - key: "nvidia.com/gpu"

@@ -1,10 +1,25 @@
 {{- if .Values.trustedCA.enabled }}
+{{/*
+The bundle must carry the INTERMEDIATE as well as the root.
+
+The KSCSC root has no keyUsage extension, and Python 3.13 enables
+VERIFY_X509_STRICT by default, which rejects a CA certificate without one:
+
+    CA cert does not include key usage extension
+
+With only the root present it has to be the trust anchor and verification
+fails - which is why this chart shipped alongside ollama.tlsVerify: false.
+Adding the intermediate makes *it* the anchor; it does carry keyUsage, the
+root is never examined, and strict verification passes without being
+weakened. Measured against llama.kscsc.local on 2026-09-17.
+*/}}
 {{- $pem := .Values.trustedCA.pem }}
+{{- $inter := "" }}
 {{- if and (not $pem) .Values.trustedCA.sourceConfigMap }}
 {{- $src := lookup "v1" "ConfigMap" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap }}
-{{- if $src }}
-{{- $pem = index $src.data .Values.trustedCA.sourceKey }}
-{{- end }}
+{{- $data := (default dict $src).data | default dict }}
+{{- $pem = index $data .Values.trustedCA.sourceKey | default "" }}
+{{- $inter = index $data .Values.trustedCA.intermediateKey | default "" }}
 {{- end }}
 {{- if not $pem }}
 {{- fail (printf "trustedCA.enabled is true but no CA found: set trustedCA.pem, or make sure ConfigMap %s/%s has key %s" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap .Values.trustedCA.sourceKey) }}
@@ -17,5 +32,8 @@ metadata:
     {{- include "news-bot.labels" . | nindent 4 }}
 data:
   root_ca.crt: |
+{{- if $inter }}
+{{ $inter | trim | indent 4 }}
+{{- end }}
 {{ $pem | trim | indent 4 }}
 {{- end }}

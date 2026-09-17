@@ -88,7 +88,7 @@ ollama:
   ollamaBaseUrl: http://localhost:11434
   provider: ollama
   timeout: 1200
-  tlsVerify: false
+  tlsVerify: true
   webSearch: false
 persistence:
   enabled: true
@@ -118,4 +118,5 @@ trustedCA:
   pem: ''
   sourceConfigMap: step-ca-step-certificates-certs
   sourceKey: root_ca.crt
+  intermediateKey: intermediate_ca.crt
   sourceNamespace: step-ca

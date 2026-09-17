@@ -1,0 +1,63 @@
+{{- if and .Values.llm.enabled .Values.llm.tls.caConfigMap.enabled (not .Values.llm.tls.caBundle) }}
+{{/*
+CA bundle used to verify llama-server's certificate.
+
+Read from step-ca's own ConfigMap at install time, the same way the news-bot
+chart does it - but with the INTERMEDIATE as well as the root, which is the
+whole point of this template.
+
+The KSCSC root carries no keyUsage extension. Python 3.13 turns on
+VERIFY_X509_STRICT by default, and strict verification rejects a CA
+certificate without one:
+
+    CA cert does not include key usage extension
+
+With only the root in the bundle the root must serve as the trust anchor and
+verification fails - which is why the other consumers of this server run with
+verification switched off. Include the intermediate and it becomes the anchor
+instead: it does carry keyUsage, the root is never examined, and strict
+verification passes without being weakened.
+*/}}
+{{- $ns := .Values.llm.tls.caConfigMap.namespace }}
+{{- $name := .Values.llm.tls.caConfigMap.name }}
+{{/* `lookup` yields nothing under `helm lint` and `helm template`, which do
+     not talk to a cluster. Funnel through `default dict` so neither this nor a
+     missing key ever dereferences nil - an absent key then simply reads as
+     empty and is reported by the checks below. */}}
+{{- $src := lookup "v1" "ConfigMap" $ns $name }}
+{{- $data := (default dict $src).data | default dict }}
+{{/* `fail` logs but does not halt rendering under lint, so these must stay
+     strings or the `trim` below blows up before the message is ever read. */}}
+{{- $root := index $data .Values.llm.tls.caConfigMap.rootKey | default "" }}
+{{- $inter := index $data .Values.llm.tls.caConfigMap.intermediateKey | default "" }}
+{{- if not $root }}
+{{- fail (printf "llm.tls.caConfigMap is enabled but no %s found in ConfigMap %s/%s. NOTE: `helm lint` and `helm template` cannot perform cluster lookups and always land here - render with `helm upgrade --install` (add --dry-run=server to preview). Otherwise set llm.tls.caBundle to the PEM literally, or disable llm.tls.caConfigMap." .Values.llm.tls.caConfigMap.rootKey $ns $name) }}
+{{- end }}
+{{- if not $inter }}
+{{- fail (printf "ConfigMap %s/%s has no key %s - without the intermediate, strict TLS verification cannot pass (see this template's comment)" $ns $name .Values.llm.tls.caConfigMap.intermediateKey) }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "myfinance.fullname" . }}-llm-ca
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: backend
+data:
+  # Intermediate first: it is the anchor that actually gets used.
+  ca-bundle.crt: |
+{{ $inter | trim | indent 4 }}
+{{ $root | trim | indent 4 }}
+{{- end }}
+{{- if and .Values.llm.enabled .Values.llm.tls.caBundle }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "myfinance.fullname" . }}-llm-ca
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: backend
+data:
+  ca-bundle.crt: |
+{{ .Values.llm.tls.caBundle | trim | indent 4 }}
+{{- end }}

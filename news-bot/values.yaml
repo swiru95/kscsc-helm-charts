@@ -110,7 +110,7 @@ ollama:
   # where ssl.create_default_context() enables VERIFY_X509_STRICT by default —
   # which rejects a CA cert without keyUsage (error 92). Flip to true once the
   # root has been re-issued with keyUsage certSign/cRLSign.
-  tlsVerify: false
+  tlsVerify: true
   authSource: "claude_cli"
   webSearch: false
   ollamaBaseUrl: "http://localhost:11434"
@@ -152,6 +152,8 @@ trustedCA:
   sourceNamespace: "step-ca"
   sourceConfigMap: "step-ca-step-certificates-certs"
   sourceKey: "root_ca.crt"
+  # Bundled alongside the root so strict TLS verification can pass.
+  intermediateKey: "intermediate_ca.crt"
   pem: ""
 
 # -- LinkedIn org metadata ---------------------------------------------------
