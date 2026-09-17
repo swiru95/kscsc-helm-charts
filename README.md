@@ -50,6 +50,7 @@ All `*.kscsc.local` DNS is resolved **in-cluster** via a custom CoreDNS server b
 | **[n8n](n8n-hosting/kubernetes/n8n-helm/)** | `default` | Workflow automation platform |
 | **[Actual Budget](actualbudget/)** | `actualbudget` | Privacy-focused local-first personal finance |
 | **[news-bot](news-bot/)** | `news-bot` | Cybersecurity news pipeline and LinkedIn posting CronJobs |
+| **[MyFinance](myfinance/)** | `myfinance` | Self-hosted budget and portfolio tracker (Next.js + FastAPI) |
 
 ---
 
@@ -68,6 +69,7 @@ All nginx ingresses are annotated with `cert-manager.io/cluster-issuer: "kscsc-c
 | `n8n.kscsc.local` | n8n | ✅ Auto (cert-manager) |
 | `bloodhound.kscsc.local` | bloodhound | ✅ Auto (cert-manager) |
 | `openvas.kscsc.local` | openvas | ✅ Auto (cert-manager) |
+| `myfinance.kscsc.local` | myfinance | ✅ Auto (cert-manager) |
 
 ---
 
@@ -107,6 +109,7 @@ helm install ollama ./ollama -n ollama --create-namespace
 helm install openui ./openui -n openui --create-namespace
 helm install splunk ./splunk -n splunk --create-namespace
 helm install n8n ./n8n-hosting/kubernetes/n8n-helm -n default
+helm install myfinance ./myfinance -n myfinance --create-namespace
 ```
 
 ### Issuing Certificates Manually

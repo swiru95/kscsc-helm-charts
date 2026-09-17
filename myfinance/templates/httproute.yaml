@@ -1,0 +1,76 @@
+{{- $frontend := .Values.gateway.serviceName | default (include "myfinance.frontendName" .) }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-https
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: {{ .Values.gateway.httpsListenerName }}
+  hostnames:
+    - {{ .Values.gateway.hostname }}
+  rules:
+    # /api/* goes straight to FastAPI. The Next.js rewrite in next.config.js
+    # cannot do this job here: `next build` bakes the rewrite destination into
+    # .next/routes-manifest.json, so BACKEND_ORIGIN at runtime is ignored and
+    # the standalone server would keep dialling the compose-era host `backend`.
+    # Splitting on path at the gateway keeps the browser on one origin without
+    # tying the image to a Service name.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.gateway.apiPathPrefix }}
+      backendRefs:
+        - name: {{ include "myfinance.backendName" . }}
+          port: {{ .Values.backend.service.port }}
+      timeouts:
+        request: {{ .Values.gateway.timeout }}
+        backendRequest: {{ .Values.gateway.timeout }}
+    # Everything else is the Next.js app. A longer PathPrefix wins over this
+    # one by the Gateway API matching rules, so ordering here is not load-bearing.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ $frontend }}
+          port: {{ .Values.gateway.servicePort }}
+      timeouts:
+        request: {{ .Values.gateway.timeout }}
+        backendRequest: {{ .Values.gateway.timeout }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Release.Name }}-http-{{ if .Values.gateway.httpDirect }}direct{{ else }}redirect{{ end }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: {{ .Values.gateway.httpListenerName }}
+  hostnames:
+    - {{ .Values.gateway.hostname }}
+  rules:
+    {{- if .Values.gateway.httpDirect }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.gateway.apiPathPrefix }}
+      backendRefs:
+        - name: {{ include "myfinance.backendName" . }}
+          port: {{ .Values.backend.service.port }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ $frontend }}
+          port: {{ .Values.gateway.servicePort }}
+    {{- else }}
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+    {{- end }}

@@ -1,0 +1,123 @@
+{{- if and .Values.postgres.enabled .Values.postgres.schemaJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "myfinance.fullname" . }}-schema
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: schema
+  annotations:
+    # post-install because PostgreSQL has to exist first; pre-upgrade so a new
+    # column lands before the backend that depends on it starts serving.
+    "helm.sh/hook": post-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app: {{ include "myfinance.name" . }}
+        component: schema
+      annotations:
+        # The only workload that gets the owner's identity, and it exists for
+        # about ten seconds per release.
+        autocert.step.sm/name: {{ .Values.postgres.autocert.ownerName }}
+    spec:
+      restartPolicy: OnFailure
+      # Needed so the step below can signal autocert's sidecar.
+      shareProcessNamespace: true
+      containers:
+        - name: schema
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # autocert's bootstrapper has already run as an init container,
+              # but PostgreSQL may still be finishing initdb on a fresh volume.
+              for i in $(seq 1 60); do
+                python -c "
+              import socket,sys
+              s=socket.socket(); s.settimeout(2)
+              sys.exit(0 if s.connect_ex(('$PGHOST', $PGPORT))==0 else 1)" && break
+                echo "waiting for postgres ($i)"; sleep 5
+              done
+              cp {{ .Values.postgres.autocert.mountPath }}/site.key /tmp/client.key
+              chmod 0600 /tmp/client.key
+              python -m src.schema
+              # autocert injects a renewer sidecar that runs forever. A Job is
+              # only complete once *every* container has exited, so without
+              # this the hook hangs until Helm times out - even though the
+              # migration finished in seconds. Stop the renewer now the
+              # certificate has served its purpose.
+              python - <<'PYEOF'
+              import os, signal
+              # Match argv[0] only. Matching the whole cmdline would also match
+              # this very shell, whose command text contains the word below -
+              # the container would SIGTERM itself and the Job would fail with
+              # exit 143 having done all its work.
+              me = {os.getpid(), os.getppid()}
+              for pid in filter(str.isdigit, os.listdir("/proc")):
+                  if int(pid) in me:
+                      continue
+                  try:
+                      argv0 = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")[0]
+                  except OSError:
+                      continue
+                  # The sidecar runs `step ca renew --daemon`, so argv[0] is
+                  # "step" - not "autocert-renewer" as the container is named.
+                  if os.path.basename(argv0.decode("utf8", "replace")) == "step":
+                      os.kill(int(pid), signal.SIGTERM)
+              PYEOF
+          env:
+            - name: PGHOST
+              value: {{ include "myfinance.postgresHost" . }}
+            - name: PGPORT
+              value: "{{ .Values.postgres.service.port }}"
+            - name: MYFINANCE_APP_ROLE
+              value: {{ .Values.postgres.appRole | quote }}
+            - name: MYFINANCE_DATABASE_URL
+              value: >-
+                postgresql+psycopg://{{ .Values.postgres.ownerRole }}@{{ include "myfinance.postgresHost" . }}:{{ .Values.postgres.service.port }}/{{ .Values.postgres.database }}?sslmode=verify-full&sslcert={{ .Values.postgres.autocert.mountPath }}/site.crt&sslkey=/tmp/client.key&sslrootcert={{ .Values.postgres.autocert.mountPath }}/root.crt
+          # autocert mounts its certs volume into every container itself.
+      volumes: []
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- if .Values.postgres.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "myfinance.fullname" . }}-postgres
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "myfinance.name" . }}
+      component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    # The database is reachable from this application only - not the gateway,
+    # not another namespace. mTLS is the second lock on the same door.
+    - from:
+      - podSelector:
+          matchLabels:
+            app: {{ include "myfinance.name" . }}
+            component: backend
+      - podSelector:
+          matchLabels:
+            app: {{ include "myfinance.name" . }}
+            component: schema
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}

@@ -1,0 +1,36 @@
+Thank you for installing {{ .Chart.Name }}!
+
+MyFinance is reachable at:
+  https://{{ .Values.gateway.hostname }}
+{{- if not .Values.gateway.httpDirect }}
+  (plain HTTP on the same host redirects to HTTPS)
+{{- end }}
+
+That hostname must be listed in the envoy-gateway-tls Certificate's dnsNames,
+or the gateway will serve a cert that does not match it:
+
+  helm -n {{ .Values.gateway.namespace }} get values envoy-resources
+
+The gateway splits the hostname by path, so the browser stays on one origin:
+  {{ .Values.gateway.apiPathPrefix }}  -> {{ include "myfinance.backendName" . }}:{{ .Values.backend.service.port }}
+  /     -> {{ include "myfinance.frontendName" . }}:{{ .Values.gateway.servicePort }}
+
+The Next.js rewrite is deliberately unused: `next build` bakes its destination
+into the image, so it cannot be steered at runtime. If BASE in
+frontend/src/lib/api.ts changes, change gateway.apiPathPrefix to match.
+
+To reach either service without the gateway:
+  kubectl port-forward -n {{ .Release.Namespace }} deploy/{{ include "myfinance.frontendName" . }} {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }}
+  kubectl port-forward -n {{ .Release.Namespace }} deploy/{{ include "myfinance.backendName" . }} {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
+
+{{- if .Values.pvc.enabled }}
+
+The SQLite database lives on PVC {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "myfinance.fullname" . }}-data{{ end }} ({{ .Values.pvc.size }}).
+Back it up before upgrading the backend image:
+  kubectl exec -n {{ .Release.Namespace }} deploy/{{ include "myfinance.backendName" . }} -- \
+    cat /app/data/myfinance.db > myfinance.db.bak-$(date +%Y%m%d-%H%M%S)
+{{- else }}
+
+WARNING: pvc.enabled is false — the SQLite database is on an emptyDir and is
+lost when the backend pod restarts.
+{{- end }}

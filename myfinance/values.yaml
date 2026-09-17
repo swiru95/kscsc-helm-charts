@@ -1,0 +1,147 @@
+# MyFinance — two images built by GitHub Actions in the MyFinance repo and
+# pushed to GHCR, tagged with the source commit (like news-bot) rather than
+# :latest, so a rollback is a values change instead of a rebuild.
+# Source: https://github.com/swiru95/MyFinance
+backend:
+  image:
+    repository: ghcr.io/swiru95/myfinance-backend
+    tag: "6ace65562d10c6a350479172405b461c4afaa587"
+    pullPolicy: IfNotPresent
+  service:
+    port: 8000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+frontend:
+  image:
+    repository: ghcr.io/swiru95/myfinance-frontend
+    tag: "6ace65562d10c6a350479172405b461c4afaa587"
+    pullPolicy: IfNotPresent
+  service:
+    port: 3000
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# Both GHCR packages are public, so the kubelet pulls them anonymously and no
+# Secret is needed. If either package is ever made private, put the pull secret
+# back here and create it in the namespace:
+#   - name: ghcr-pull-secret
+imagePullSecrets: []
+
+# The gateway splits one hostname across both Services by path, so the browser
+# stays on a single origin and CORS is never exercised. Set anyway, so a request
+# that does arrive with an Origin header is answered correctly.
+#
+# Note there is deliberately no BACKEND_ORIGIN here: `next build` bakes the
+# next.config.js rewrite destination into .next/routes-manifest.json, so setting
+# it at runtime does nothing. See gateway.apiPathPrefix below.
+cors:
+  origins:
+    - https://myfinance.kscsc.local
+
+gateway:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: myfinance.kscsc.local
+  # Blank means "this release's frontend Service"; override only to route the
+  # hostname somewhere else.
+  serviceName: ""
+  servicePort: 3000
+  # Requests under this prefix are sent to the backend Service instead of the
+  # frontend. It must match the `BASE` in frontend/src/lib/api.ts.
+  apiPathPrefix: /api
+  httpDirect: false
+  timeout: 60s
+
+# SQLite lives on a single file — ReadWriteOnce, one replica, Recreate on
+# upgrade so two backends never open the same DB.
+pvc:
+  enabled: true
+  # leave blank to use cluster default storageClass
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 2Gi
+  # optional explicit claim name; if empty, chart will create one based on release name
+  name: ""
+
+nodeSelector: {}
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+affinity: {}
+
+# Both Services take traffic from the gateway and nothing else, since the
+# gateway addresses each one directly. Egress is unrestricted — the price
+# service calls out to open.er-api.com, gold-api.com and CoinGecko.
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    namespace: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: envoy
+
+# --- PostgreSQL with mutual TLS -------------------------------------------
+# Replaces the SQLite file. Both ends present a certificate issued by the
+# in-cluster step-ca and injected by autocert, so there is no password
+# anywhere: the client's certificate *is* the credential.
+#
+# Two roles, because they need different powers:
+#   owner - creates and migrates the schema, used only by the pre-upgrade Job
+#   app   - what the API runs as: rows in and out, no DDL, owns nothing
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  database: myfinance
+  # The schema Job is a post-install/pre-upgrade hook, and pre-upgrade hooks
+  # run BEFORE the release's own resources. That is the right order once
+  # PostgreSQL exists - the migration must land before the new backend serves -
+  # but it deadlocks on the very first switch from SQLite, when the Job waits
+  # for a database the same upgrade has not created yet. Set this false for
+  # that one bootstrap upgrade, then true again.
+  schemaJob:
+    enabled: true
+  ownerRole: myfinance_owner
+  appRole: myfinance_app
+  service:
+    port: 5432
+  # autocert issues a cert per workload from the annotation below. The names
+  # are DNS-shaped because step-ca's policy expects that; pg_ident.conf maps
+  # them onto the two role names.
+  autocert:
+    # serverName is derived from the release name (see _helpers.tpl) so the
+    # certificate always matches the Service clients connect to.
+    appName: myfinance-app.myfinance.svc.cluster.local
+    ownerName: myfinance-owner.myfinance.svc.cluster.local
+    # Where autocert's bootstrapper and renewer drop site.crt/site.key/root.crt.
+    mountPath: /var/run/autocert.step.sm
+  # postgres:17-alpine runs as this uid; the private key has to be readable by
+  # it and by nobody else, or libpq and the server both refuse to start.
+  runAsUser: 70
+  pvc:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi

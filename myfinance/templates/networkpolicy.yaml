@@ -1,0 +1,53 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "myfinance.frontendName" . }}
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "myfinance.name" . }}
+      component: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.ingress.enabled }}
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingress.namespace }}
+        podSelector:
+          matchLabels:
+{{ toYaml .Values.networkPolicy.ingress.podLabels | indent 12 }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "myfinance.backendName" . }}
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: backend
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "myfinance.name" . }}
+      component: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- if .Values.networkPolicy.ingress.enabled }}
+    # The gateway routes /api/* straight here, so it is the backend's client —
+    # not the frontend, whose built-in proxy is bypassed entirely.
+    - from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingress.namespace }}
+        podSelector:
+          matchLabels:
+{{ toYaml .Values.networkPolicy.ingress.podLabels | indent 12 }}
+    {{- end }}
+{{- end }}

@@ -11,6 +11,12 @@ image:
   # `latest` on the feed-data images is how feeds stay current — Greenbone rebuilds
   # them continuously, so Always is what picks up new NVTs/CVEs on restart.
   pullPolicy: Always
+  # Optional full image overrides (registry/repo:tag). When set for a component
+  # it replaces the computed registry/repo:tag — used for patched builds such as
+  # the native-OIDC gsad/gsa images. Leave empty to use the stock image.
+  overrides:
+    gsad: ""
+    gsa: ""
   tags:
     # Long-running services
     gvmd: stable
@@ -182,6 +188,43 @@ sso:
     - profile
     - email
   cookieDomain: ""
+
+# --- Native OIDC SSO inside gsad (single sign-on into GSA) ---
+# Unlike the gateway-level `sso` above, this is real SSO: gsad itself performs
+# the OIDC code flow, auto-provisions the user in gvmd and creates a GSA
+# session. It requires the patched gsad image (image.overrides.gsad) and the
+# patched gsa image (image.overrides.gsa) which auto-redirects to /sso/login.
+#
+# When enabled, the gateway-level `sso` MUST be disabled — Envoy's OIDC filter
+# would intercept the callback and break the flow.
+#
+# Prerequisites:
+#   1. An app registration in Entra ID with redirect URI
+#      https://<gateway.hostname><gsadSso.callbackPath>
+#   2. A Secret in THIS namespace holding the client secret under key
+#      "client-secret", named by gsadSso.clientSecretName
+gsadSso:
+  enabled: false
+  # Bare issuer URL — gsad appends /.well-known/openid-configuration itself.
+  issuer: ""
+  clientID: ""
+  clientSecretName: "openvas-oidc"
+  # Must match the redirect URI registered in the IdP app registration.
+  callbackPath: /oauth2/callback
+  scopes: "openid email profile"
+  # Which userinfo claim identifies the user (used as the GSA username).
+  usernameClaim: email
+  # Shared password assigned to auto-provisioned SSO users. gsad authenticates
+  # against it to create the session. Change it and re-provision to rotate.
+  password: "sso-oidc-managed"
+  # Admin account gsad uses to create users in gvmd. Defaults to the chart's
+  # adminUser (bootstrap-admin). Leave empty to reuse adminUser.
+  adminUser: ""
+  adminPassword: ""
+  adminPasswordSecret: ""
+  adminPasswordKey: password
+  # Optional role to assign to new users (empty = default role).
+  roleID: ""
 
 networkPolicy:
   enabled: true

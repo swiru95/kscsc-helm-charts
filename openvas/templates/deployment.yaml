@@ -108,8 +108,8 @@ spec:
 
         # Copies the built web UI out for nginx to serve.
         - name: gsa
-          image: {{ include "openvas.image" (dict "root" $ "repo" "gsa" "tag" .Values.image.tags.gsa) }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ .Values.image.overrides.gsa | default (include "openvas.image" (dict "root" $ "repo" "gsa" "tag" .Values.image.tags.gsa)) }}
+          imagePullPolicy: {{ if .Values.image.overrides.gsa }}IfNotPresent{{ else }}{{ .Values.image.pullPolicy }}{{ end }}
           env:
             - name: MOUNT_PATH
               value: /mnt/web
@@ -152,6 +152,56 @@ spec:
               mountPath: /mnt/nginx/configs
             - name: nginx-certs
               mountPath: /mnt/nginx/certs
+        {{- if .Values.gsadSso.enabled }}
+        # Native OIDC SSO needs two things the stock nginx config does not do:
+        #   1. proxy /sso/* and the callback path to gsad (stock only proxies
+        #      gmp|system_report|logout|login), and
+        #   2. expose the SSO settings to the frontend via config.js (nginx
+        #      serves config.js statically, so gsad's own config.js handler is
+        #      never reached).
+        # Runs after gsa (writes config.js) and gvm-config (writes default.conf),
+        # and patches both in place.
+        - name: patch-nginx-sso
+          image: {{ include "openvas.image" (dict "root" $ "repo" "nginx" "tag" .Values.image.tags.nginx) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              CONF=/mnt/nginx/configs/default.conf
+              CB="{{ .Values.gsadSso.callbackPath }}"
+              # 1. Proxy the SSO endpoints to gsad. Insert a location block just
+              #    before the static config.js location (regex locations are
+              #    evaluated in order, so this wins over the static file).
+              awk -v cb="$CB" '
+                /^  location ~ \^\/config\\\.\(js\|ts\) \{/ && !done {
+                  print "  location ~ ^(/sso/login|" cb ")/?$ {";
+                  print "    proxy_pass http://gsad;";
+                  print "    proxy_set_header Host $host;";
+                  print "    proxy_set_header X-Real-IP $remote_addr;";
+                  print "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;";
+                  print "    proxy_set_header X-Forwarded-Proto $scheme;";
+                  print "  }";
+                  done=1
+                }
+                { print }
+              ' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+              # 2. Expose the SSO settings to the frontend. config.js is served
+              #    statically by nginx, so append the block to the file itself.
+              CFG=/mnt/web/config.js
+              if [ -f "$CFG" ]; then
+                printf '\nconfig.sso = { enabled: true, loginUrl: "/sso/login", callbackPath: "%s" };\n' "$CB" >> "$CFG"
+              else
+                printf 'config = {\n  sso: { enabled: true, loginUrl: "/sso/login", callbackPath: "%s" }\n};\n' "$CB" > "$CFG"
+              fi
+              echo "patched nginx for native OIDC SSO (callback: $CB)"
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /mnt/nginx/configs
+            - name: gsa-data
+              mountPath: /mnt/web
+        {{- end }}
 
         - name: configure-openvas
           image: {{ include "openvas.image" (dict "root" $ "repo" "openvas-scanner" "tag" .Values.image.tags.openvasScanner) }}
@@ -279,8 +329,9 @@ spec:
               readOnly: true
 
         - name: gsad
-          image: {{ include "openvas.image" (dict "root" $ "repo" "gsad" "tag" .Values.image.tags.gsad) }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ .Values.image.overrides.gsad | default (include "openvas.image" (dict "root" $ "repo" "gsad" "tag" .Values.image.tags.gsad)) }}
+          # Overridden images are loaded onto the node by hand, so never pull.
+          imagePullPolicy: {{ if .Values.image.overrides.gsad }}IfNotPresent{{ else }}{{ .Values.image.pullPolicy }}{{ end }}
           env:
             - name: GSAD_HTTP_ONLY
               value: "true"
@@ -288,6 +339,42 @@ spec:
               value: "true"
             - name: GSAD_FOREGROUND
               value: "true"
+            {{- if .Values.gsadSso.enabled }}
+            # Native OIDC SSO. gsad performs the code flow itself, provisions the
+            # user in gvmd and creates the GSA session.
+            - name: GSAD_SSO_ENABLED
+              value: "true"
+            - name: GSAD_SSO_ISSUER
+              value: {{ .Values.gsadSso.issuer | quote }}
+            - name: GSAD_SSO_CLIENT_ID
+              value: {{ .Values.gsadSso.clientID | quote }}
+            - name: GSAD_SSO_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gsadSso.clientSecretName }}
+                  key: client-secret
+            - name: GSAD_SSO_REDIRECT_URI
+              value: "https://{{ .Values.gateway.hostname }}{{ .Values.gsadSso.callbackPath }}"
+            - name: GSAD_SSO_CALLBACK_PATH
+              value: {{ .Values.gsadSso.callbackPath | quote }}
+            - name: GSAD_SSO_SCOPES
+              value: {{ .Values.gsadSso.scopes | quote }}
+            - name: GSAD_SSO_USERNAME_CLAIM
+              value: {{ .Values.gsadSso.usernameClaim | quote }}
+            - name: GSAD_SSO_PASSWORD
+              value: {{ .Values.gsadSso.password | quote }}
+            - name: GSAD_SSO_ADMIN_USER
+              value: {{ .Values.gsadSso.adminUser | default .Values.adminUser.username | quote }}
+            - name: GSAD_SSO_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gsadSso.adminPasswordSecret | default (.Values.adminUser.existingSecret | default (printf "%s-admin" (include "openvas.fullname" .))) }}
+                  key: {{ .Values.gsadSso.adminPasswordKey | default .Values.adminUser.passwordKey }}
+            {{- if .Values.gsadSso.roleID }}
+            - name: GSAD_SSO_ROLE_ID
+              value: {{ .Values.gsadSso.roleID | quote }}
+            {{- end }}
+            {{- end }}
           volumeMounts:
             - name: gvmd-socket
               mountPath: /run/gvmd

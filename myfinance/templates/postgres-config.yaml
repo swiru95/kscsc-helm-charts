@@ -1,0 +1,75 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "myfinance.fullname" . }}-postgres-config
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    ssl = on
+    ssl_cert_file = '/tls/server.crt'
+    ssl_key_file = '/tls/server.key'
+    # Presenting the CA here is what lets the server *verify* clients rather
+    # than merely encrypt the connection.
+    ssl_ca_file = '/tls/root.crt'
+    ssl_min_protocol_version = 'TLSv1.3'
+    hba_file = '/etc/postgres-hba/pg_hba.conf'
+    ident_file = '/etc/postgres-hba/pg_ident.conf'
+    max_connections = 50
+    shared_buffers = 128MB
+    log_connections = on
+    log_disconnections = on
+
+  pg_hba.conf: |
+    # Unix socket, no TLS: this is how initdb and the entrypoint bootstrap the
+    # cluster before any certificate exists. Not reachable over the network.
+    local   all             all                                     trust
+
+    # Everything arriving over the network must present a client certificate
+    # signed by the KSCSC CA. clientcert=verify-full also requires the
+    # certificate's name to map to the role being requested, so a valid cert
+    # for one role cannot be used to log in as the other.
+    hostssl {{ .Values.postgres.database }}  all  all  cert  map=certmap  clientcert=verify-full
+
+    # Anything else - plaintext, other databases, password auth - is refused
+    # rather than silently falling through.
+    host    all             all             all                     reject
+    hostssl all             all             all                     reject
+
+  pg_ident.conf: |
+    # MAPNAME   SYSTEM-USERNAME (certificate CN)   PG-USERNAME
+    certmap     {{ .Values.postgres.autocert.appName }}     {{ .Values.postgres.appRole }}
+    certmap     {{ .Values.postgres.autocert.ownerName }}   {{ .Values.postgres.ownerRole }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "myfinance.fullname" . }}-postgres-initdb
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+data:
+  # Runs once, as the superuser, when the data directory is first created.
+  # Roles only - the schema itself belongs to the owner, created by the Job.
+  01-roles.sql: |
+    -- Certificate authentication means neither role ever needs a password.
+    CREATE ROLE {{ .Values.postgres.ownerRole }} LOGIN;
+    CREATE ROLE {{ .Values.postgres.appRole }} LOGIN;
+
+    -- The owner owns the schema and therefore may create and alter within it.
+    ALTER DATABASE {{ .Values.postgres.database }} OWNER TO {{ .Values.postgres.ownerRole }};
+    ALTER SCHEMA public OWNER TO {{ .Values.postgres.ownerRole }};
+
+    -- PostgreSQL 15+ already drops PUBLIC's CREATE on public; be explicit so
+    -- this does not depend on the server default.
+    REVOKE ALL ON SCHEMA public FROM PUBLIC;
+    REVOKE ALL ON DATABASE {{ .Values.postgres.database }} FROM PUBLIC;
+
+    -- The application role gets connect + schema usage here; table-level
+    -- grants come from the schema Job, once tables exist to grant on.
+    GRANT CONNECT ON DATABASE {{ .Values.postgres.database }} TO {{ .Values.postgres.appRole }};
+    GRANT USAGE ON SCHEMA public TO {{ .Values.postgres.appRole }};
+{{- end }}

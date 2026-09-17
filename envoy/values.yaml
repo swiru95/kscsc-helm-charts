@@ -99,4 +99,5 @@ certificate:
     - openui.kscsc.local
     - ca.kscsc.local
     - splunk.kscsc.local
+    - myfinance.kscsc.local
     # Add a hostname here for every new HTTPRoute you add

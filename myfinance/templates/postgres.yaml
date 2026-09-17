@@ -1,0 +1,151 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "myfinance.fullname" . }}-postgres
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.postgres.service.port }}
+      targetPort: postgres
+      protocol: TCP
+      name: postgres
+  selector:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "myfinance.fullname" . }}-postgres
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: postgres
+spec:
+  serviceName: {{ include "myfinance.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "myfinance.name" . }}
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: {{ include "myfinance.name" . }}
+        component: postgres
+      annotations:
+        # autocert's webhook sees this and injects a bootstrapper init
+        # container plus a renewer sidecar, which keep site.crt/site.key fresh.
+        autocert.step.sm/name: {{ include "myfinance.postgresHost" . }}
+    spec:
+      containers:
+        - name: postgres
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          # autocert appends its bootstrapper AFTER any initContainers the pod
+          # declares, so the certificate does not exist until the main
+          # container starts - the key preparation has to live here, not in an
+          # init container. The official entrypoint still drops to the postgres
+          # user via gosu once this shell has done its root-only work.
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cp {{ .Values.postgres.autocert.mountPath }}/site.crt /tls/server.crt
+              cp {{ .Values.postgres.autocert.mountPath }}/site.key /tls/server.key
+              cp {{ .Values.postgres.autocert.mountPath }}/root.crt /tls/root.crt
+              chown {{ .Values.postgres.runAsUser }}:{{ .Values.postgres.runAsUser }} /tls/server.crt /tls/server.key /tls/root.crt
+              chmod 0600 /tls/server.key
+              chmod 0644 /tls/server.crt /tls/root.crt
+              exec docker-entrypoint.sh postgres -c config_file=/etc/postgres-conf/postgresql.conf
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}
+            # Only ever used over the local unix socket, which pg_hba trusts;
+            # every network login is certificate-based.
+            - name: POSTGRES_HOST_AUTH_METHOD
+              value: "trust"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            # Writable: the container itself lays down the key at 0600 here,
+            # because autocert's own mount is shared and group-readable.
+            - name: tls
+              mountPath: /tls
+            - name: conf
+              mountPath: /etc/postgres-conf
+              readOnly: true
+            - name: hba
+              mountPath: /etc/postgres-hba
+              readOnly: true
+            - name: initdb
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "{{ .Values.postgres.database }}"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "{{ .Values.postgres.database }}"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+{{ toYaml .Values.postgres.resources | indent 12 }}
+      volumes:
+        - name: tls
+          emptyDir: {}
+        - name: conf
+          configMap:
+            name: {{ include "myfinance.fullname" . }}-postgres-config
+            items:
+              - key: postgresql.conf
+                path: postgresql.conf
+        - name: hba
+          configMap:
+            name: {{ include "myfinance.fullname" . }}-postgres-config
+            items:
+              - key: pg_hba.conf
+                path: pg_hba.conf
+              - key: pg_ident.conf
+                path: pg_ident.conf
+        - name: initdb
+          configMap:
+            name: {{ include "myfinance.fullname" . }}-postgres-initdb
+        {{- if not .Values.postgres.pvc.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.postgres.pvc.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+{{ toYaml .Values.postgres.pvc.accessModes | indent 10 }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.pvc.size }}
+      {{- if .Values.postgres.pvc.storageClass }}
+        storageClassName: "{{ .Values.postgres.pvc.storageClass }}"
+      {{- end }}
+  {{- end }}
+{{- end }}

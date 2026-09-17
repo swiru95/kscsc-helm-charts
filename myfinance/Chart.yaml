@@ -1,0 +1,6 @@
+apiVersion: v2
+name: myfinance
+description: MyFinance — self-hosted budget and portfolio tracker (FastAPI + Next.js)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

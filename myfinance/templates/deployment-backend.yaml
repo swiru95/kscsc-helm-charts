@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "myfinance.backendName" . }}
+  labels:
+    app: {{ include "myfinance.name" . }}
+    component: backend
+spec:
+  replicas: 1
+  # SQLite on a ReadWriteOnce volume: the old pod must let go before the new
+  # one starts, so no rolling second replica.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ include "myfinance.name" . }}
+      component: backend
+  template:
+    metadata:
+      labels:
+        app: {{ include "myfinance.name" . }}
+        component: backend
+      {{- if .Values.postgres.enabled }}
+      annotations:
+        # Identity for mutual TLS to PostgreSQL. The certificate's name maps to
+        # the low-privilege role in pg_ident.conf, so this pod cannot log in as
+        # the schema owner even though both certs come from the same CA.
+        autocert.step.sm/name: {{ .Values.postgres.autocert.appName }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+{{- if .Values.postgres.enabled }}
+          # Cert preparation and the schema wait both belong here: autocert's
+          # bootstrapper runs after any declared initContainer, so nothing
+          # earlier in the pod can see site.key. libpq also rejects a key that
+          # is readable beyond its owner, hence the private 0600 copy.
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cp {{ .Values.postgres.autocert.mountPath }}/site.key /pgkey/client.key
+              chmod 0600 /pgkey/client.key
+              for i in $(seq 1 60); do
+                if python -c "
+              import os
+              from sqlalchemy import create_engine, inspect
+              e = create_engine(os.environ['MYFINANCE_DATABASE_URL'])
+              assert 'assets' in inspect(e).get_table_names()
+              " 2>/dev/null; then break; fi
+                echo "waiting for schema ($i)"; sleep 5
+              done
+              exec uvicorn src.main:app --host 0.0.0.0 --port {{ .Values.backend.service.port }}
+{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.service.port }}
+          env:
+{{- if .Values.postgres.enabled }}
+            - name: MYFINANCE_DATABASE_URL
+              value: >-
+                postgresql+psycopg://{{ .Values.postgres.appRole }}@{{ include "myfinance.postgresHost" . }}:{{ .Values.postgres.service.port }}/{{ .Values.postgres.database }}?sslmode=verify-full&sslcert={{ .Values.postgres.autocert.mountPath }}/site.crt&sslkey=/pgkey/client.key&sslrootcert={{ .Values.postgres.autocert.mountPath }}/root.crt
+{{- else }}
+            - name: MYFINANCE_DATA_DIR
+              value: /app/data
+{{- end }}
+            # pydantic-settings parses a list field from JSON, which is how
+            # docker-compose passes it too.
+            - name: MYFINANCE_CORS_ORIGINS
+              value: {{ toJson .Values.cors.origins | quote }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          volumeMounts:
+{{- if .Values.postgres.enabled }}
+            # NOTE: /var/run/autocert.step.sm is mounted into every container
+            # by autocert's webhook. Declaring it here too would be a duplicate
+            # mountPath and the pod would be rejected.
+            - name: pgkey
+              mountPath: /pgkey
+{{- else }}
+            - name: data
+              mountPath: /app/data
+{{- end }}
+          resources:
+{{ toYaml .Values.backend.resources | indent 12 }}
+      volumes:
+{{- if .Values.postgres.enabled }}
+        - name: pgkey
+          emptyDir: {}
+{{- else }}
+        - name: data
+        {{- if .Values.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "myfinance.fullname" . }}-data{{ end }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+{{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

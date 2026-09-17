@@ -1,0 +1,67 @@
+# Example values - real deployment values live in the private config/ submodule.
+# MyFinance holds no credentials of its own: PostgreSQL authenticates with
+# certificates issued by the in-cluster step-ca, so the only deploy-time input
+# is the image tag.
+affinity: {}
+backend:
+  image:
+    pullPolicy: IfNotPresent
+    repository: ghcr.io/swiru95/myfinance-backend
+    tag: 6ace65562d10c6a350479172405b461c4afaa587
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  service:
+    port: 8000
+cors:
+  origins:
+  - https://myfinance.kscsc.local
+frontend:
+  image:
+    pullPolicy: IfNotPresent
+    repository: ghcr.io/swiru95/myfinance-frontend
+    tag: 6ace65562d10c6a350479172405b461c4afaa587
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  service:
+    port: 3000
+gateway:
+  apiPathPrefix: /api
+  hostname: myfinance.kscsc.local
+  httpDirect: false
+  httpListenerName: http
+  httpsListenerName: https
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  serviceName: ""
+  servicePort: 3000
+  timeout: 60s
+imagePullSecrets: []
+networkPolicy:
+  enabled: true
+  ingress:
+    enabled: true
+    namespace: envoy-gateway-system
+    podLabels:
+      app.kubernetes.io/name: envoy
+nodeSelector: {}
+postgres:
+  enabled: true
+pvc:
+  accessModes:
+  - ReadWriteOnce
+  enabled: true
+  name: ""
+  size: 2Gi
+  storageClass: ""
+tolerations:
+- effect: NoSchedule
+  key: nvidia.com/gpu
+  operator: Exists
