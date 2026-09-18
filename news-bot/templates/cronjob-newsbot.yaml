@@ -25,12 +25,20 @@ spec:
             {{- with .Values.podLabels }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.podAnnotations }}
+          {{- $ann := deepCopy (.Values.podAnnotations | default dict) }}
+          {{- if .Values.autocert.enabled }}
+          {{- $_ := set $ann "autocert.step.sm/name" (include "news-bot.autocert.name" .) }}
+          {{- end }}
+          {{- with $ann }}
           annotations:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         spec:
           restartPolicy: OnFailure
+          {{- if .Values.autocert.enabled }}
+          # So the teardown in the container command can signal the renewer.
+          shareProcessNamespace: true
+          {{- end }}
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
@@ -64,9 +72,24 @@ spec:
                 {{- if .Values.trustedCA.enabled }}
                 {{- include "news-bot.trustedCA.env" . | nindent 16 }}
                 {{- end }}
+                {{- if .Values.autocert.enabled }}
+                {{- include "news-bot.autocert.env" . | nindent 16 }}
+                {{- end }}
                 {{- with .Values.newsbot.extraEnv }}
                 {{- toYaml . | nindent 16 }}
                 {{- end }}
+              {{- if .Values.autocert.enabled }}
+              # The image is ENTRYPOINT ["news-bot"], so the teardown cannot
+              # just be appended to a command list - the entrypoint is wrapped
+              # instead and the flags below are passed through as "$@".
+              command:
+                - sh
+                - -c
+                - |
+{{ include "news-bot.autocert.teardown" . | indent 18 }}
+                  news-bot "$@"
+                - --
+              {{- end }}
               args:
                 - "--config=/config/config.yaml"
                 - "--opml=/config/Feeds.xml"

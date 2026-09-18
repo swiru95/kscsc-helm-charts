@@ -26,12 +26,20 @@ spec:
             {{- with .Values.podLabels }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- with .Values.podAnnotations }}
+          {{- $ann := deepCopy (.Values.podAnnotations | default dict) }}
+          {{- if .Values.autocert.enabled }}
+          {{- $_ := set $ann "autocert.step.sm/name" (include "news-bot.autocert.name" .) }}
+          {{- end }}
+          {{- with $ann }}
           annotations:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         spec:
           restartPolicy: OnFailure
+          {{- if .Values.autocert.enabled }}
+          # So the teardown in the container command can signal the renewer.
+          shareProcessNamespace: true
+          {{- end }}
           {{- with .Values.imagePullSecrets }}
           imagePullSecrets:
             {{- toYaml . | nindent 12 }}
@@ -62,6 +70,9 @@ spec:
               args:
                 - |
                   set -u
+                  {{- if .Values.autocert.enabled }}
+{{ include "news-bot.autocert.teardown" . | indent 18 }}
+                  {{- end }}
                   NEWS_FILE="/data/output/NEWS.md"
                   NEWS_JSON="/data/output/news.json"
                   HASH_FILE="{{ .Values.linkedin.hashFilePath }}"
@@ -77,7 +88,13 @@ spec:
                     exit 0
                   fi
 
-                  linkedin-feeder --news="$NEWS_FILE" --post-json="$NEWS_JSON" --no-verify-tls{{- range .Values.linkedin.extraArgs }} {{ . | quote }}{{- end }}
+                  # No --no-verify-tls: the CA bundle below carries the KSCSC
+                  # intermediate, so strict verification passes. The flag used to
+                  # be hardcoded here, and OLLAMA_TLS_VERIFY could not undo it -
+                  # the feeder's env handling can only turn verification OFF or
+                  # point it at a bundle, never switch it back on. Set
+                  # ollama.tlsVerify=false to disable it deliberately.
+                  linkedin-feeder --news="$NEWS_FILE" --post-json="$NEWS_JSON"{{- range .Values.linkedin.extraArgs }} {{ . | quote }}{{- end }}
                   EXIT_CODE=$?
 
                   if [ "$EXIT_CODE" -eq 0 ]; then
@@ -86,11 +103,20 @@ spec:
 
                   exit "$EXIT_CODE"
               {{- else }}
+              {{- if .Values.autocert.enabled }}
+              command:
+                - sh
+                - -c
+                - |
+{{ include "news-bot.autocert.teardown" . | indent 18 }}
+                  linkedin-feeder "$@"
+                - --
+              {{- else }}
               command: ["linkedin-feeder"]
+              {{- end }}
               args:
                 - "--news=/data/output/NEWS.md"
                 - "--post-json=/data/output/news.json"
-                - "--no-verify-tls"
                 {{- range .Values.linkedin.extraArgs }}
                 - {{ . | quote }}
                 {{- end }}
@@ -149,6 +175,9 @@ spec:
                 {{- end }}
                 {{- if .Values.trustedCA.enabled }}
                 {{- include "news-bot.trustedCA.env" . | nindent 16 }}
+                {{- end }}
+                {{- if .Values.autocert.enabled }}
+                {{- include "news-bot.autocert.env" . | nindent 16 }}
                 {{- end }}
               envFrom:
                 - configMapRef:

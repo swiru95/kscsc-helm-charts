@@ -1,7 +1,7 @@
 # -- Image -------------------------------------------------------------------
 image:
   repository: ghcr.io/swiru95/news-bot
-  tag: f79722356b04878702ef60eb57f997b3a65342df
+  tag: 96647c74b153400d46b91439e6d0842758634acf
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
@@ -156,6 +156,32 @@ trustedCA:
   # Bundled alongside the root so strict TLS verification can pass.
   intermediateKey: "intermediate_ca.crt"
   pem: ""
+
+# -- Client identity: mTLS to llama-server -----------------------------------
+# autocert issues this pod a certificate whose DNS SAN is `name` below, and
+# llama-server maps that SAN to a role in auth_policy.mtls.role_map. Both entry
+# points present it alongside the API key - the key is NOT redundant: the
+# router does not pass mTLS identity to the model child it proxies inference
+# to, so a certificate alone reaches /slots and not /v1/chat/completions.
+#
+# PREREQUISITE: the namespace must carry the label `autocert.step.sm=enabled`.
+# Without it the admission webhook ignores the annotation and injects nothing -
+# and it fails SILENTLY: no init container, no cert directory, and the pods
+# keep working on the API key alone.
+#
+#   kubectl label namespace <ns> autocert.step.sm=enabled
+#
+# Enabling this also sets shareProcessNamespace on the pod and wraps the
+# container command, so that the injected renewer sidecar can be stopped when
+# the job finishes; see news-bot.autocert.teardown in _helpers.tpl for why a
+# Job cannot complete without that.
+autocert:
+  enabled: false
+  # The DNS SAN the certificate carries, and the exact string llama-server
+  # matches on (SAN keys in role_map are compared byte-for-byte).
+  name: "news-bot.news-bot.svc.cluster.local"
+  # Where autocert's bootstrapper and renewer drop site.crt/site.key/root.crt.
+  mountPath: "/var/run/autocert.step.sm"
 
 # -- LinkedIn org metadata ---------------------------------------------------
 linkedinOrg:

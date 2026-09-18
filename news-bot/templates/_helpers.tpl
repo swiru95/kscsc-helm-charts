@@ -174,3 +174,78 @@ affinity:
   {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end }}
+
+{{/*
+Where autocert's bootstrapper drops the pair, as the two entry points read it.
+Both read OLLAMA_CLIENT_* from the environment; the pipeline also accepts
+llm.client_cert / llm.client_key in config.yaml, but env keeps the two paths
+defined in exactly one place.
+*/}}
+{{- define "news-bot.autocert.name" -}}
+{{- /* Defaulted, never nil: a release upgraded with --reuse-values reuses the
+       old values verbatim and never sees a new chart default, which would
+       otherwise render `autocert.step.sm/name: null` and silently get no
+       certificate. Must match a SAN key in llama-server's role_map, which is
+       compared byte-for-byte. */ -}}
+{{- .Values.autocert.name | default (printf "%s.%s.svc.cluster.local" (include "news-bot.fullname" .) .Release.Namespace) }}
+{{- end }}
+
+{{- define "news-bot.autocert.mountPath" -}}
+{{- .Values.autocert.mountPath | default "/var/run/autocert.step.sm" }}
+{{- end }}
+
+{{- define "news-bot.autocert.env" -}}
+- name: OLLAMA_CLIENT_CERT
+  value: {{ printf "%s/site.crt" (include "news-bot.autocert.mountPath" .) | quote }}
+- name: OLLAMA_CLIENT_KEY
+  value: {{ printf "%s/site.key" (include "news-bot.autocert.mountPath" .) | quote }}
+{{- end }}
+
+{{/*
+Shell prologue that stops autocert's renewer when the job's work is done.
+
+autocert injects a renewer sidecar that runs forever, and a Job is only
+complete once EVERY container has exited. Without this the job hangs until
+activeDeadlineSeconds and is then marked FAILED, having done all its work.
+Installed as an EXIT trap so the early-exit paths are covered too - the
+LinkedIn feeder returns early when there is nothing new to post.
+
+Requires shareProcessNamespace: true on the pod, and works because the
+injected renewer inherits the pod's runAsUser (999), so the same UID may
+signal it. Measured against this cluster on 2026-09-18.
+*/}}
+{{- define "news-bot.autocert.teardown" -}}
+_stop_renewer() {
+  python3 <<'PYEOF'
+import os, signal, time
+# The renewer starts in parallel with this container, so a run that finishes in
+# seconds can reach here before "step" exists. Wait for it rather than leaving
+# the sidecar behind and hanging the Job.
+deadline = time.time() + 60
+me = {os.getpid(), os.getppid()}
+target = None
+while time.time() < deadline and target is None:
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        if int(pid) in me:
+            continue
+        try:
+            argv0 = open(f"/proc/{pid}/cmdline", "rb").read().split(b"\0")[0]
+        except OSError:
+            continue
+        # The sidecar runs `step ca renew --daemon`, so argv[0] is "step" - not
+        # "autocert-renewer" as the container is named. Matching argv[0] only:
+        # matching the whole cmdline would also match the shell running this.
+        if os.path.basename(argv0.decode("utf8", "replace")) == "step":
+            target = int(pid)
+            break
+    if target is None:
+        time.sleep(1)
+if target is not None:
+    try:
+        os.kill(target, signal.SIGTERM)
+    except (PermissionError, ProcessLookupError):
+        pass
+PYEOF
+}
+trap _stop_renewer EXIT
+{{- end }}
