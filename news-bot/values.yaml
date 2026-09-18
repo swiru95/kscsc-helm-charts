@@ -105,11 +105,12 @@ ollama:
   # a non-Bearer scheme — it takes precedence over apiKey in the pipeline, but the
   # linkedin-feeder ignores it entirely. Leave empty and use apiKey.
   authHeader: ""
-  # Cannot be true yet, even though trustedCA puts the KSCSC root in the bundle:
-  # that root carries no keyUsage extension, and this image is on Python 3.13,
-  # where ssl.create_default_context() enables VERIFY_X509_STRICT by default —
-  # which rejects a CA cert without keyUsage (error 92). Flip to true once the
-  # root has been re-issued with keyUsage certSign/cRLSign.
+  # Safe to keep true only because trustedCA below bundles the INTERMEDIATE as
+  # well as the root. The root carries no keyUsage extension and this image is on
+  # Python 3.13+, where ssl.create_default_context() enables VERIFY_X509_STRICT
+  # by default and rejects a trust anchor without keyUsage (error 92). With the
+  # intermediate present it becomes the anchor and the root is never examined.
+  # If trustedCA.intermediateKey is ever cleared, this must go back to false.
   tlsVerify: true
   authSource: "claude_cli"
   webSearch: false

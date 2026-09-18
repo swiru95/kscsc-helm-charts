@@ -19,7 +19,12 @@ weakened. Measured against llama.kscsc.local on 2026-09-17.
 {{- $src := lookup "v1" "ConfigMap" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap }}
 {{- $data := (default dict $src).data | default dict }}
 {{- $pem = index $data .Values.trustedCA.sourceKey | default "" }}
-{{- $inter = index $data .Values.trustedCA.intermediateKey | default "" }}
+{{/* intermediateKey may be absent on a release upgraded with --reuse-values,
+     which reuses the old values verbatim and never sees a new chart default.
+     index on a nil key errors, so guard it and fall back to root-only. */}}
+{{- with .Values.trustedCA.intermediateKey }}
+{{- $inter = index $data . | default "" }}
+{{- end }}
 {{- end }}
 {{- if not $pem }}
 {{- fail (printf "trustedCA.enabled is true but no CA found: set trustedCA.pem, or make sure ConfigMap %s/%s has key %s" .Values.trustedCA.sourceNamespace .Values.trustedCA.sourceConfigMap .Values.trustedCA.sourceKey) }}
