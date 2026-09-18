@@ -9,7 +9,6 @@ certgen:
       operator: Exists
 certificate:
   dnsNames:
-  - actualbudget.kscsc.local
   - ollama.kscsc.local
   - openui.kscsc.local
   - ca.kscsc.local

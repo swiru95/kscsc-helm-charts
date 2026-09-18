@@ -16,7 +16,6 @@ envoyIP: "192.168.95.51"
 # -- Host entries served from the zone
 hosts:
   envoy:
-    - actualbudget.kscsc.local
     - openui.kscsc.local
     - ca.kscsc.local
     - splunk.kscsc.local

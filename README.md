@@ -48,7 +48,6 @@ All `*.kscsc.local` DNS is resolved **in-cluster** via a custom CoreDNS server b
 | Chart | Namespace | Description |
 | :--- | :--- | :--- |
 | **[n8n](n8n-hosting/kubernetes/n8n-helm/)** | `default` | Workflow automation platform |
-| **[Actual Budget](actualbudget/)** | `actualbudget` | Privacy-focused local-first personal finance |
 | **[news-bot](news-bot/)** | `news-bot` | Cybersecurity news pipeline and LinkedIn posting CronJobs |
 | **[MyFinance](myfinance/)** | `myfinance` | Self-hosted budget and portfolio tracker (Next.js + FastAPI) |
 
@@ -61,7 +60,6 @@ All nginx ingresses are annotated with `cert-manager.io/cluster-issuer: "kscsc-c
 | Host | Chart | TLS |
 | :--- | :--- | :--- |
 | `ca.kscsc.local` | step-ca | ✅ Auto (cert-manager) |
-| `actualbudget.kscsc.local` | actualbudget | ✅ Auto (cert-manager) |
 | `auth.kscsc.local` | oauth2-proxy | ✅ Auto (cert-manager) |
 | `ollama.kscsc.local` | ollama | ✅ Auto (cert-manager) |
 | `openui.kscsc.local` | openui | ✅ Auto (cert-manager) |
@@ -101,8 +99,6 @@ helm install cluster-issuer ./cluster-issuer -n cert-manager --create-namespace 
   --set cert-manager.crds.enabled=false
 
 # 5. Application charts (any order)
-helm install actualbudget community-charts/actualbudget -n actualbudget --create-namespace \
-  -f ./actualbudget/values.yaml
 helm install oauth2-proxy oauth2-proxy/oauth2-proxy -n oauth2-proxy --create-namespace \
   -f ./oauth2-proxy/values.yaml
 helm install ollama ./ollama -n ollama --create-namespace

@@ -94,7 +94,6 @@ certificate:
     name: kscsc-ca-issuer
     kind: ClusterIssuer
   dnsNames:
-    - actualbudget.kscsc.local
     - ollama.kscsc.local
     - openui.kscsc.local
     - ca.kscsc.local
