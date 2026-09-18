@@ -19,6 +19,19 @@ backend:
 cors:
   origins:
   - https://myfinance.kscsc.local
+# Entra ID SSO: authorization code + PKCE in the browser, token validation in
+# the backend. A public client has no secret, and both ids below travel in the
+# address bar during sign-in, so neither is a credential and neither needs a
+# Secret. Create the app registration first - see the MyFinance README,
+# "Entra ID SSO".
+auth:
+  enabled: true
+  tenantId: 1b3ec069-f45f-4b09-bb2d-5d7806950a5f
+  clientId: 00000000-0000-0000-0000-000000000000
+  apiScope: access_as_user
+  # Paired with "Assignment required" on the enterprise application, this and
+  # not tenant membership is what actually gates access.
+  requiredRole: MyFinance.User
 frontend:
   image:
     pullPolicy: IfNotPresent

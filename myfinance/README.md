@@ -124,6 +124,10 @@ helm upgrade --install coredns-custom ./coreDNS -n kube-system
 | `frontend.image.repository` / `.tag` | `ghcr.io/swiru95/myfinance-frontend` / `0.1.0` | Frontend image |
 | `imagePullSecrets` | `[{name: ghcr-pull-secret}]` | Pull secret for the private GHCR packages |
 | `cors.origins` | `[https://myfinance.kscsc.local]` | `MYFINANCE_CORS_ORIGINS` on the backend |
+| `auth.enabled` | `true` | Entra ID SSO. `false` leaves every API endpoint open |
+| `auth.tenantId` / `.clientId` | *(empty)* | Public client identifiers. Required when `auth.enabled`; the chart refuses to render without them |
+| `auth.apiScope` | `access_as_user` | Scope exposed on `api://<clientId>` and requested by the SPA |
+| `auth.requiredRole` | `MyFinance.User` | App role the caller must hold. Empty admits anyone in the tenant |
 | `gateway.hostname` | `myfinance.kscsc.local` | HTTPRoute hostname |
 | `gateway.apiPathPrefix` | `/api` | Prefix routed to the backend; must match `BASE` in `frontend/src/lib/api.ts` |
 | `gateway.httpDirect` | `false` | `false` redirects :80 → :443; `true` serves plaintext |

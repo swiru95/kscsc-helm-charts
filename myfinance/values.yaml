@@ -84,6 +84,32 @@ pvc:
 # itself unconfigured and the page says so, rather than failing per request.
 # Provide the key through a values file that is not committed, or point
 # existingSecret at a Secret created out of band.
+# Entra ID SSO. The browser runs OAuth 2.0 authorization code + PKCE against
+# the tenant; the backend validates the resulting access token on every
+# request. One app registration serves as both, so there is a single clientId.
+#
+# Nothing here is secret. A public client has no secret by definition, and both
+# values travel in the address bar during sign-in - which is exactly why they
+# can live in a values file instead of a Secret.
+#
+# They are served to the browser by the backend at /api/auth/config rather than
+# baked into the frontend image: `next build` inlines NEXT_PUBLIC_* variables,
+# and these images are built once in CI and deployed to whichever tenant the
+# chart names.
+auth:
+  # Off leaves every API endpoint open. Only ever appropriate for a throwaway
+  # local run - see the startup warning the backend logs.
+  enabled: true
+  tenantId: ""
+  clientId: ""
+  # The scope the SPA requests, exposed on the app's own Application ID URI as
+  # api://<clientId>/<apiScope>.
+  apiScope: access_as_user
+  # App role the caller must hold. Paired with "Assignment required" on the
+  # enterprise application, this - not tenant membership - is the actual gate.
+  # Empty would admit anybody in the tenant.
+  requiredRole: MyFinance.User
+
 llm:
   enabled: true
   baseUrl: https://llama.kscsc.local:8443

@@ -75,6 +75,18 @@ spec:
             # docker-compose passes it too.
             - name: MYFINANCE_CORS_ORIGINS
               value: {{ toJson .Values.cors.origins | quote }}
+{{- if .Values.auth.enabled }}
+            # Public client identifiers, not credentials. The backend also
+            # serves these to the browser at /api/auth/config.
+            - name: MYFINANCE_AUTH_TENANT_ID
+              value: {{ required "auth.tenantId is required when auth.enabled" .Values.auth.tenantId | quote }}
+            - name: MYFINANCE_AUTH_CLIENT_ID
+              value: {{ required "auth.clientId is required when auth.enabled" .Values.auth.clientId | quote }}
+            - name: MYFINANCE_AUTH_API_SCOPE
+              value: {{ .Values.auth.apiScope | quote }}
+            - name: MYFINANCE_AUTH_REQUIRED_ROLE
+              value: {{ .Values.auth.requiredRole | quote }}
+{{- end }}
 {{- if .Values.llm.enabled }}
             - name: MYFINANCE_LLM_BASE_URL
               value: {{ .Values.llm.baseUrl | quote }}
