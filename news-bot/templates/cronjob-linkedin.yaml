@@ -173,6 +173,16 @@ spec:
                       key: {{ .Values.googleAI.apiKeySecretKey }}
                       optional: true
                 {{- end }}
+                {{- if and .Values.comfyUI.enabled .Values.comfyUI.apiKeySecretKey }}
+                # Optional bearer key for the ComfyUI gateway. Without it the feeder
+                # authenticates with the autocert client certificate alone.
+                - name: COMFYUI_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "news-bot.secretName" . }}
+                      key: {{ .Values.comfyUI.apiKeySecretKey }}
+                      optional: true
+                {{- end }}
                 {{- if .Values.trustedCA.enabled }}
                 {{- include "news-bot.trustedCA.env" . | nindent 16 }}
                 {{- end }}

@@ -143,9 +143,29 @@ kubectl patch secret news-bot-secrets -n news-bot \
   -p '{"stringData":{"google-ai-api-key":"<google-ai-studio-key>"}}'
 ```
 
-Turn it off with `googleAI.enabled=false` (drops the env var and sets
-`LINKEDIN_POST_IMAGE=false`). The cluster must be able to reach
+Turn it off with `googleAI.enabled=false` (drops the env var; with `comfyUI` also
+disabled it sets `LINKEDIN_POST_IMAGE=false`). The cluster must be able to reach
 `generativelanguage.googleapis.com`.
+
+## Post illustration (self-hosted ComfyUI)
+
+With `comfyUI.enabled=true` the same subject is rendered on a ComfyUI gateway
+(Z-Image Turbo) instead, as a wordless engineering blueprint of the defences that
+would counter the day's threats. It takes precedence over Google when both are on.
+
+```yaml
+comfyUI:
+  enabled: true
+  url: https://llama.kscsc.local:8188
+autocert:
+  enabled: true      # the client certificate is the credential
+```
+
+The gateway admits the job by its client certificate: add the certificate's subject
+DN (`CN=<autocert.name>`) to the gateway's `clients.map` and reload nginx. To use a
+bearer key instead (or as well), put it in the Secret and set
+`comfyUI.apiKeySecretKey` to its key name. `trustedCA` must be enabled so the
+gateway's step-ca certificate verifies.
 
 ## Install the chart
 

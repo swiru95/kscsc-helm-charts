@@ -53,12 +53,22 @@ data:
   LINKEDIN_ORG_NAME: {{ .Values.linkedinOrg.name | quote }}
   LINKEDIN_ORG_URL: {{ .Values.linkedinOrg.url | quote }}
   # Post illustration. LINKEDIN_POST_IMAGE=false switches it off without removing
-  # the key; the feeder also stays inert if GOOGLE_AI_API_KEY is unset.
-  LINKEDIN_POST_IMAGE: {{ .Values.googleAI.enabled | quote }}
+  # the key; the feeder also stays inert with neither COMFYUI_URL nor
+  # GOOGLE_AI_API_KEY set. ComfyUI wins when both are configured.
+  LINKEDIN_POST_IMAGE: {{ or .Values.googleAI.enabled .Values.comfyUI.enabled | quote }}
+  {{- if .Values.comfyUI.enabled }}
+  COMFYUI_URL: {{ required "comfyUI.url is required when comfyUI.enabled is true" .Values.comfyUI.url | quote }}
+  {{- with .Values.comfyUI.model }}
+  COMFYUI_MODEL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.comfyUI.steps }}
+  COMFYUI_STEPS: {{ . | quote }}
+  {{- end }}
+  {{- end }}
   {{- with .Values.googleAI.imageModel }}
   GOOGLE_IMAGE_MODEL: {{ . | quote }}
   {{- end }}
-  {{- with .Values.googleAI.aspectRatio }}
+  {{- with coalesce (ternary .Values.comfyUI.aspectRatio "" .Values.comfyUI.enabled) .Values.googleAI.aspectRatio }}
   IMAGE_ASPECT_RATIO: {{ . | quote }}
   {{- end }}
   {{- with .Values.googleAI.imageSize }}

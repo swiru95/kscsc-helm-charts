@@ -141,6 +141,25 @@ googleAI:
   aspectRatio: "16:9"
   imageSize: "2K"
 
+# -- Post illustration via self-hosted ComfyUI ---------------------------------
+# Renders the illustration on a ComfyUI gateway (Z-Image Turbo) instead of
+# Google: a wordless blueprint of the defences that counter the day's threats.
+# Takes precedence over googleAI when both are enabled. Authentication is the
+# autocert client certificate (autocert.enabled; its subject DN, e.g.
+# "CN=news-bot.news-bot.svc.cluster.local", must be in the gateway's
+# clients.map) and/or a bearer key from the Secret. Same cosmetic contract:
+# any failure publishes the post as text.
+comfyUI:
+  enabled: false
+  url: ""                  # e.g. https://llama.kscsc.local:8188
+  # Secret key holding an optional bearer key; empty = client certificate only.
+  apiKeySecretKey: ""
+  # Empty values fall back to the image's defaults (z_image_turbo_bf16, 9 steps).
+  model: ""
+  steps: ""
+  # Overrides googleAI.aspectRatio for ComfyUI renders when set.
+  aspectRatio: ""
+
 # -- Private CA trust --------------------------------------------------------
 # llama-server presents a cert from the in-cluster step-ca, whose root is in no
 # public bundle. An init container appends it to the image's CA bundle so TLS

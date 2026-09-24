@@ -22,6 +22,13 @@ feeds:
   existingConfigMap: news-bot-feeds
   inline: ''
 fullnameOverride: ''
+comfyUI:
+  apiKeySecretKey: ''
+  aspectRatio: ''
+  enabled: false
+  model: ''
+  steps: ''
+  url: ''
 googleAI:
   apiKey: ''
   apiKeySecretKey: google-ai-api-key
