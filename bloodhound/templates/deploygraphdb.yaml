@@ -21,6 +21,11 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   replicas: {{ .Values.graphdb.replicas }}
+  # One ReadWriteOnce local-path volume: a rolling update starts the new pod while the
+  # old one still holds the data dir (neo4j store lock / postgres pidfile) and never
+  # becomes Ready. Stop the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Values.graphdb.appName }}

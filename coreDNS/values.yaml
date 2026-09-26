@@ -24,6 +24,7 @@ hosts:
     - openvas.kscsc.local
     - falco.kscsc.local
     - myfinance.kscsc.local
+    - scannvnc.kscsc.local
   # -- Entries pinned to an explicit IP (hosts outside the cluster)
   static:
     - ip: 192.168.95.201
@@ -44,8 +45,8 @@ patch:
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 2
   image:
-    repository: bitnami/kubectl
-    tag: latest
+    repository: alpine/k8s
+    tag: "1.36.4"
     pullPolicy: IfNotPresent
   toleration:
     key: "nvidia.com/gpu"

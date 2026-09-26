@@ -1,0 +1,6 @@
+apiVersion: v2
+name: scannvnc
+description: ScannVNC — read-only exposure monitor for VNC/RDP/SSH/Telnet (Flask dashboard + scheduled Shodan/Censys ingest)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

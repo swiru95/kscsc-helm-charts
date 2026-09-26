@@ -1,0 +1,101 @@
+{{- if .Values.coraza.enabled }}
+{{- if not .Values.coraza.image.sha256 }}
+{{- fail "coraza.enabled is true but coraza.image.sha256 is empty: Envoy Gateway refuses an unpinned Wasm image. Use the linux/amd64 CHILD manifest digest, not the OCI index digest." }}
+{{- end }}
+{{- /* "*.conf" already pulls in 901 and 949; only a hand-trimmed list needs checking. */}}
+{{- if not (has "*.conf" .Values.coraza.crsFiles) }}
+{{- if not (has "REQUEST-901-INITIALIZATION.conf" .Values.coraza.crsFiles) }}
+{{- fail "coraza.crsFiles is a trimmed list missing REQUEST-901-INITIALIZATION.conf: without it the CRS variables are never set up and the attack rules silently never match." }}
+{{- end }}
+{{- if not (has "REQUEST-949-BLOCKING-EVALUATION.conf" .Values.coraza.crsFiles) }}
+{{- fail "coraza.crsFiles is a trimmed list missing REQUEST-949-BLOCKING-EVALUATION.conf: without it nothing evaluates the anomaly score, so no rule ever blocks." }}
+{{- end }}
+{{- end }}
+{{- $validSets := list "detect" "block" "block-except-exempt-paths" "disabled" }}
+{{- range $host, $set := .Values.coraza.perAuthority }}
+{{- if not (has $set $validSets) }}
+{{- fail (printf "coraza.perAuthority[%s] is %q, which is not one of: detect, block, block-except-exempt-paths, disabled" $host $set) }}
+{{- end }}
+{{- end }}
+{{- if and (has "block-except-exempt-paths" (values .Values.coraza.perAuthority)) (not .Values.coraza.exemptPaths) }}
+{{- fail "a host uses the block-except-exempt-paths set but coraza.exemptPaths is empty: every request would be blocked. List the path prefixes to downgrade." }}
+{{- end }}
+# Coraza WAF, attached to the Gateway as a Wasm extension.
+#
+# Verify after any change to the image or the rule list: fire N identical
+# attack probes, then confirm detections == N and that the envoy container log
+# contains no "in-VM backtrace" lines. A partial detection rate means VMs are
+# panicking and the gateway is failing open.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: {{ .Values.coraza.name }}
+  labels:
+    app: {{ .Values.gateway.name }}
+spec:
+  # Gateway-scoped, so this must sit in the Gateway's own namespace.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+  wasm:
+    - name: {{ .Values.coraza.filterName }}
+      rootID: coraza-waf
+      failOpen: {{ .Values.coraza.failOpen }}
+      code:
+        type: Image
+        pullPolicy: IfNotPresent
+        image:
+          url: {{ .Values.coraza.image.url | quote }}
+          sha256: {{ .Values.coraza.image.sha256 | quote }}
+      config:
+        # Hosts with no entry in perAuthority land here.
+        default_directives: {{ .Values.coraza.defaultSet }}
+        {{- with .Values.coraza.perAuthority }}
+        per_authority_directives:
+          {{- range $host, $set := . }}
+          {{ $host | quote }}: {{ $set | quote }}
+          {{- end }}
+        {{- end }}
+        directives_map:
+          disabled:
+            - "SecRuleEngine Off"
+          detect:
+            - "Include @recommended-conf"
+            - "Include @crs-setup-conf"
+            - "SecRuleEngine DetectionOnly"
+            {{- range .Values.coraza.crsFiles }}
+            - "Include @owasp_crs/{{ . }}"
+            {{- end }}
+          block:
+            - "Include @recommended-conf"
+            - "Include @crs-setup-conf"
+            - "SecRuleEngine On"
+            {{- range .Values.coraza.crsFiles }}
+            - "Include @owasp_crs/{{ . }}"
+            {{- end }}
+          # Blocks like `block`, except on the prefixes in coraza.exemptPaths,
+          # which are downgraded to DetectionOnly for that request via
+          # ctl:ruleEngine. The ctl rules are declared BEFORE the CRS includes
+          # on purpose: rules run in declaration order within a phase, and the
+          # downgrade has to land before CRS's own phase-1 blocking evaluation
+          # (949111) fires, or the request is already rejected.
+          block-except-exempt-paths:
+            - "Include @recommended-conf"
+            - "Include @crs-setup-conf"
+            - "SecRuleEngine On"
+            {{- $id := 10000 }}
+            {{- range .Values.coraza.exemptPaths }}
+            {{- $id = add1 $id }}
+            - "SecRule REQUEST_URI \"@beginsWith {{ . }}\" \"id:{{ $id }},phase:1,nolog,pass,ctl:ruleEngine=DetectionOnly\""
+            {{- end }}
+            {{- /* After the exemptPaths rules, so Off wins over DetectionOnly when both prefixes match. */}}
+            {{- $id = 10100 }}
+            {{- range .Values.coraza.disabledPaths }}
+            {{- $id = add1 $id }}
+            - "SecRule REQUEST_URI \"@beginsWith {{ . }}\" \"id:{{ $id }},phase:1,nolog,pass,ctl:ruleEngine=Off\""
+            {{- end }}
+            {{- range .Values.coraza.crsFiles }}
+            - "Include @owasp_crs/{{ . }}"
+            {{- end }}
+{{- end }}

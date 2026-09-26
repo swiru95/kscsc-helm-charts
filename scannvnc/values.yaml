@@ -1,0 +1,98 @@
+# ScannVNC — exposure monitor.
+#
+# The dashboard is a read-only view over a SQLite tracking store. A CronJob
+# queries the search engines (Shodan/Censys/ZoomEye — metadata only, no host is
+# ever contacted) and upserts results into that store, so the dashboard tracks
+# exposed VNC/RDP/SSH/Telnet endpoints over time.
+#
+# Image is built locally and imported into each node's containerd (see the
+# chart README), matching the `-local` tag convention used by myfinance.
+image:
+  repository: ghcr.io/swiru95/scannvnc
+  tag: "0.1.7-local"
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8000
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+# SQLite lives on one file — ReadWriteOnce, one replica, Recreate on upgrade so
+# two dashboards never open the same DB. The ingest CronJob co-locates with the
+# dashboard pod (podAffinity) because local-path volumes are node-local RWO.
+pvc:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  name: ""
+
+# --- Search-engine credentials --------------------------------------------
+# Read-only API keys for discovery. Provide them here (they land in a Secret
+# this chart creates) or point existingSecret at a Secret you created out of
+# band. The keys are metadata-lookup scoped; no key here can connect to a host.
+searchEngines:
+  # Create the Secret from the values below. Set false to use existingSecret.
+  createSecret: true
+  existingSecret: ""
+  shodanApiKey: ""
+  zoomeyeApiKey: ""
+  censysPat: ""
+  censysOrgId: ""
+
+# --- Scheduled read-only ingest -------------------------------------------
+ingest:
+  enabled: true
+  schedule: "0 0 * * *"        # every midnight (00:00)
+  protocols:                  # which services to discover and track
+    - vnc
+    - rdp
+    - ssh
+    - telnet
+  # Sources queried on each run. shodan/censys/zoomeye are search engines
+  # (need API keys); computernewb is the VNC Resolver (no key, VNC-only).
+  # A source that errors (e.g. zoomeye with no account credits) is skipped and
+  # the rest still run.
+  engines:
+    - shodan
+    - computernewb
+    - zoomeye
+  maxResults: 200
+  query: ""                   # optional explicit query; empty = per-protocol default
+  # After each ingest, have the local LLM write a daily status report over the
+  # (read-only) tracking store, viewable at /report.
+  generateReport: true
+
+# --- Local LLM (llama.kscsc.local) for the daily report --------------------
+# In-cluster this is reachable over plain HTTP on port 80 (no mTLS needed for
+# the report path). The API key is metadata-analysis scoped.
+llm:
+  baseUrl: https://llama.kscsc.local:8443/v1
+  model: Thinker
+  apiKey: ""                  # set via values overlay; stored in the Secret
+  existingSecret: ""          # or reference a Secret holding LLAMA_API_KEY
+
+# --- Envoy Gateway routing -------------------------------------------------
+# scannvnc.kscsc.local must be present BOTH in the coreDNS hosts.envoy list and
+# in the envoy chart's certificate.dnsNames, or DNS/TLS will not match. See the
+# chart README for the two one-line upgrades.
+gateway:
+  enabled: true
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+  httpsListenerName: https
+  httpListenerName: http
+  hostname: scannvnc.kscsc.local
+  serviceName: ""             # blank = this release's Service
+  httpDirect: false           # serve HTTPS only, 301 plain HTTP up to it
+  timeout: 60s
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

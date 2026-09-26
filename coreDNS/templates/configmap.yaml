@@ -8,6 +8,7 @@ metadata:
 data:
   {{ .Values.zone | replace "." "-" }}.server: |
     {{ .Values.zone }}:53 {
+      errors
       hosts {
         {{- range .Values.hosts.envoy }}
         {{ $.Values.envoyIP }} {{ . }}
@@ -17,4 +18,15 @@ data:
         {{- end }}
         fallthrough
       }
+      # This forward is NOT optional, and removing `fallthrough` is not a
+      # substitute for it. CoreDNS's hosts plugin returns through
+      # NextOrFailure, so with no plugin after it every name in this zone that
+      # is not listed above answers SERVFAIL. Pods carry `search ... {{ .Values.zone }}`
+      # with ndots:5, and glibc and c-ares abort the whole search chain on
+      # SERVFAIL (Go's resolver quietly continues, which is what hid this).
+      # The symptom is that pods cannot resolve external names such as
+      # ghcr.io, nor long svc.cluster.local FQDNs, while Go workloads and
+      # image pulls look perfectly healthy.
+      # Upstream answers NXDOMAIN for this zone, which lets the chain carry on.
+      forward . /etc/resolv.conf
     }

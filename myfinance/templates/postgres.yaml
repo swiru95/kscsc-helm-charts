@@ -61,6 +61,12 @@ spec:
               chown {{ .Values.postgres.runAsUser }}:{{ .Values.postgres.runAsUser }} /tls/server.crt /tls/server.key /tls/root.crt
               chmod 0600 /tls/server.key
               chmod 0644 /tls/server.crt /tls/root.crt
+              # The socket directory is a shared volume so the cert-reloader
+              # sidecar can reach the server locally; mounting over the image's
+              # own directory resets its ownership, so restore it here while
+              # this shell is still root.
+              chown {{ .Values.postgres.runAsUser }}:{{ .Values.postgres.runAsUser }} /var/run/postgresql
+              chmod 0775 /var/run/postgresql
               exec docker-entrypoint.sh postgres -c config_file=/etc/postgres-conf/postgresql.conf
           ports:
             - name: postgres
@@ -90,6 +96,8 @@ spec:
             - name: initdb
               mountPath: /docker-entrypoint-initdb.d
               readOnly: true
+            - name: pgrun
+              mountPath: /var/run/postgresql
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "postgres", "-d", "{{ .Values.postgres.database }}"]
@@ -102,8 +110,56 @@ spec:
             periodSeconds: 30
           resources:
 {{ toYaml .Values.postgres.resources | indent 12 }}
+        # autocert's renewer keeps site.crt fresh on the shared mount, but the
+        # copy above runs once, at container start, and PostgreSQL reads
+        # ssl_cert_file only at boot. Without this sidecar the server goes on
+        # presenting its first certificate until the pod restarts - and
+        # step-ca leaves live 24h, so every client hits "certificate verify
+        # failed" a day after rollout. Re-copy on change, then SIGHUP.
+        - name: cert-reloader
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              src={{ .Values.postgres.autocert.mountPath }}
+              # Nothing to reload until the server is accepting connections.
+              until pg_isready -q -h /var/run/postgresql -U postgres; do sleep 5; done
+              while true; do
+                if ! cmp -s "$src/site.crt" /tls/server.crt; then
+                  # Stage beside the originals and rename, so the server never
+                  # reads a half-written certificate or a cert/key mismatch.
+                  cp "$src/site.crt" /tls/.server.crt.new
+                  cp "$src/site.key" /tls/.server.key.new
+                  cp "$src/root.crt" /tls/.root.crt.new
+                  chown {{ .Values.postgres.runAsUser }}:{{ .Values.postgres.runAsUser }} /tls/.server.crt.new /tls/.server.key.new /tls/.root.crt.new
+                  chmod 0600 /tls/.server.key.new
+                  chmod 0644 /tls/.server.crt.new /tls/.root.crt.new
+                  mv /tls/.server.key.new /tls/server.key
+                  mv /tls/.root.crt.new /tls/root.crt
+                  mv /tls/.server.crt.new /tls/server.crt
+                  # PostgreSQL rebuilds its SSL context on SIGHUP, so the new
+                  # leaf is served without dropping existing connections.
+                  psql -q -h /var/run/postgresql -U postgres -c 'SELECT pg_reload_conf();' >/dev/null
+                  echo "$(date -u +%FT%TZ) reloaded renewed certificate"
+                fi
+                sleep {{ .Values.postgres.certReload.intervalSeconds }}
+              done
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+            - name: pgrun
+              mountPath: /var/run/postgresql
+          resources:
+{{ toYaml .Values.postgres.certReload.resources | indent 12 }}
       volumes:
         - name: tls
+          emptyDir: {}
+        # Shared so the sidecar can reach the server over the local socket,
+        # which pg_hba trusts - no certificate needed to ask for a reload.
+        - name: pgrun
           emptyDir: {}
         - name: conf
           configMap:

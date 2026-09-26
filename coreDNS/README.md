@@ -62,7 +62,7 @@ The reconcile CronJob will keep the toleration in place even after the host or k
 | `hosts.static` | `{ip, name}` pairs for hosts outside the cluster | See values.yaml |
 | `patch.enabled` | Run a CronJob to restore the GPU toleration when k3s overwrites CoreDNS | `true` |
 | `patch.schedule` | How often the reconcile job checks CoreDNS | `*/2 * * * *` |
-| `patch.image.*` | Container image used by the reconcile job | `bitnami/kubectl:latest` |
+| `patch.image.*` | Container image used by the reconcile job (needs `sh` + `grep` + `kubectl`) | `alpine/k8s:1.36.4` |
 | `patch.toleration.key` | Taint key to tolerate | `nvidia.com/gpu` |
 | `patch.toleration.operator` | Toleration operator | `Exists` |
 | `patch.toleration.effect` | Taint effect | `NoSchedule` |

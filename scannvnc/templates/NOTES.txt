@@ -1,0 +1,26 @@
+Thank you for installing {{ .Chart.Name }}!
+
+The exposure dashboard is reachable at:
+  https://{{ .Values.gateway.hostname }}
+{{- if not .Values.gateway.httpDirect }}
+  (plain HTTP on the same host redirects to HTTPS)
+{{- end }}
+
+For that hostname to resolve AND serve a matching certificate, it must be in
+BOTH:
+  1. coreDNS  -> coreDNS/values.yaml  hosts.envoy  (helm upgrade coredns-custom)
+  2. the cert -> envoy/values.yaml     certificate.dnsNames (helm upgrade envoy-resources)
+
+Reach it without the gateway (no DNS/cert needed):
+  kubectl port-forward -n {{ .Release.Namespace }} deploy/{{ include "scannvnc.dashboardName" . }} 8000:{{ .Values.service.port }}
+  # then open http://localhost:8000
+
+{{- if .Values.ingest.enabled }}
+
+Discovery runs on a schedule ({{ .Values.ingest.schedule }}) via CronJob
+{{ include "scannvnc.fullname" . }}-ingest. Trigger one immediately:
+  kubectl create job -n {{ .Release.Namespace }} --from=cronjob/{{ include "scannvnc.fullname" . }}-ingest ingest-now
+{{- end }}
+
+The dashboard is read-only and never connects to a discovered host — it only
+visualizes metadata the search engines return.

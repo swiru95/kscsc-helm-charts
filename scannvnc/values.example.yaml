@@ -1,0 +1,24 @@
+# Example overlay for the scannvnc chart. Copy, fill in, and pass with -f.
+# Keep the real file OUT of git — it holds API keys.
+#
+#   helm upgrade --install scannvnc ./scannvnc \
+#     --namespace scannvnc --create-namespace -f my-values.yaml
+
+searchEngines:
+  createSecret: true
+  # Read-only, metadata-lookup-scoped keys. Shodan alone is enough to start.
+  shodanApiKey: "REPLACE_ME"
+  zoomeyeApiKey: ""
+  censysPat: ""
+  censysOrgId: ""
+
+ingest:
+  enabled: true
+  schedule: "0 */6 * * *"
+  protocols: [vnc, rdp, ssh, telnet]
+  engine: shodan
+  maxResults: 200
+
+gateway:
+  enabled: true
+  hostname: scannvnc.kscsc.local

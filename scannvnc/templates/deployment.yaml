@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scannvnc.dashboardName" . }}
+  labels:
+    app: {{ include "scannvnc.name" . }}
+    component: dashboard
+spec:
+  replicas: 1
+  # SQLite on a ReadWriteOnce volume: the old pod must release it before the
+  # new one starts.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: {{ include "scannvnc.name" . }}
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: {{ include "scannvnc.name" . }}
+        component: dashboard
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: dashboard
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: SCANNVNC_DB
+              value: /data/scannvnc.db
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      volumes:
+        - name: data
+        {{- if .Values.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "scannvnc.pvcName" . }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

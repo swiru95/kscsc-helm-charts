@@ -1,0 +1,99 @@
+{{- if .Values.ingest.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "scannvnc.fullname" . }}-ingest
+  labels:
+    app: {{ include "scannvnc.name" . }}
+    component: ingest
+spec:
+  schedule: {{ .Values.ingest.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: {{ include "scannvnc.name" . }}
+            component: ingest
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+          # local-path volumes are node-local RWO, so the ingest pod must land
+          # on the same node as the dashboard that owns the PVC.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: {{ include "scannvnc.name" . }}
+                      component: dashboard
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: ingest
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              envFrom:
+                - secretRef:
+                    name: {{ include "scannvnc.secretName" . }}
+              env:
+                - name: SCANNVNC_DB
+                  value: /data/scannvnc.db
+                {{- if .Values.ingest.generateReport }}
+                - name: LLAMA_BASE_URL
+                  value: {{ .Values.llm.baseUrl | quote }}
+                - name: LLAMA_MODEL
+                  value: {{ .Values.llm.model | quote }}
+                {{- if .Values.llm.existingSecret }}
+                - name: LLAMA_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.llm.existingSecret }}
+                      key: LLAMA_API_KEY
+                {{- end }}
+                {{- end }}
+              command:
+                - python
+                - -m
+                - scannvnc.cli
+              {{- range .Values.ingest.engines }}
+                - --search
+                - {{ . | quote }}
+              {{- end }}
+              {{- range .Values.ingest.protocols }}
+                - --protocol
+                - {{ . | quote }}
+              {{- end }}
+              {{- if .Values.ingest.query }}
+                - --search-query
+                - {{ .Values.ingest.query | quote }}
+              {{- end }}
+                - --search-only
+                - --ingest
+                - --db
+                - /data/scannvnc.db
+                - --max-results
+                - {{ .Values.ingest.maxResults | quote }}
+              {{- if .Values.ingest.generateReport }}
+                - --generate-report
+              {{- end }}
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+              resources:
+{{ toYaml .Values.resources | indent 16 }}
+          volumes:
+            - name: data
+            {{- if .Values.pvc.enabled }}
+              persistentVolumeClaim:
+                claimName: {{ include "scannvnc.pvcName" . }}
+            {{- else }}
+              emptyDir: {}
+            {{- end }}
+{{- end }}

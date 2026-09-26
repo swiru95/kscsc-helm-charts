@@ -239,6 +239,17 @@ postgres:
   # postgres:17-alpine runs as this uid; the private key has to be readable by
   # it and by nobody else, or libpq and the server both refuse to start.
   runAsUser: 70
+  # The sidecar that re-copies autocert's renewed certificate into /tls and
+  # asks the server to reload it. autocert renews roughly every 15h against a
+  # 24h leaf, so anything well under that leaves plenty of margin.
+  certReload:
+    intervalSeconds: 300
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
   pvc:
     enabled: true
     storageClass: ""

@@ -82,8 +82,115 @@ certgen:
         operator: "Exists"
         effect: "NoSchedule"
 
+# ---------------------------------------------------------------------------
+# Coraza WAF (OWASP CRS) as a Wasm filter on the Gateway
+# ---------------------------------------------------------------------------
+# Renders an EnvoyExtensionPolicy. Attaches at the Gateway, not per-HTTPRoute:
+# Envoy Gateway has no Wasm VM sharing across policies (upstream #9565), so a
+# policy per route would load a full copy of the rules per worker thread.
+# Per-application differences go in `perAuthority` instead.
 coraza:
   enabled: false
+  name: coraza-waf
+
+  # -- Bump this to force Envoy to re-create the Wasm VM and re-fetch the
+  # module. Envoy does not retry a failed fetch on its own (upstream #5619),
+  # so this is the recovery lever when the plugin reports "failed to load".
+  #
+  # Bump it once and then leave it alone. Re-bumping repeatedly while the
+  # module is still failing to load churns half-initialised VMs, which nil-panic
+  # in (coraza/v3.wafWrapper).NewTransaction on proxy_on_request_headers and
+  # then fail open. That churn is what produces a partial detection rate; it is
+  # not a property of the rule set. Fix the fetch first, then bump once.
+  filterName: coraza-crs1
+
+  image:
+    # 0.6.0 (2025-07-06) is the newest tag; `main` vendors the same CRS 4.14.0.
+    url: ghcr.io/corazawaf/coraza-proxy-wasm:0.6.0
+    # -- Envoy Gateway verifies the per-platform (amd64) CHILD manifest digest,
+    # NOT the OCI index digest. Pinning the index digest is rejected with a
+    # checksum mismatch. Re-read this after any image bump:
+    #   crane digest --platform linux/amd64 <url>
+    sha256: 65d6009b9da2e8965e592a08b74a86725435fc01aa39c756dce0bd5ea64b3f4e
+
+  # -- One gateway fronts every application, so a dead VM must not take them
+  # all down. The tradeoff is that failure is silent: watch for
+  # "in-VM backtrace" in the envoy container log.
+  failOpen: true
+
+  # -- Rule set applied to any host with no entry in perAuthority below.
+  # Kept at `detect` so a newly routed application is logged, never blocked,
+  # until someone has looked at its traffic.
+  defaultSet: detect
+
+  # -- CRS rule files to load, WITHOUT the @owasp_crs/ prefix.
+  #
+  # "*.conf" loads the whole Core Rule Set and is the default. Measured on this
+  # cluster 2026-09-22 from a clean apply: 30/30 detections, zero VM panics,
+  # and resident memory flat at ~758Mi across 160 further requests.
+  #
+  # The full set costs memory: Envoy RSS goes from ~188Mi to ~758Mi, which is
+  # the one-time cost of holding the rules in each of the ~10 Wasm VMs. That is
+  # allocation, not a leak. There is no memory limit on the Envoy container, and
+  # the node it runs on sits near 19% memory, so there is headroom - but this is
+  # the number to re-check if the proxy is ever rescheduled somewhere tighter.
+  #
+  # If you ever need to trim, list files explicitly instead. Keep
+  # REQUEST-901-INITIALIZATION.conf and REQUEST-949-BLOCKING-EVALUATION.conf:
+  # 901 sets up the CRS variables and 949 evaluates the anomaly score, and
+  # without both the attack families in between silently never match. The
+  # template enforces that.
+  crsFiles:
+    - "*.conf"
+
+  # -- Path prefixes downgraded to DetectionOnly for hosts on the
+  # `block-except-exempt-paths` set. Deliberately broad: a prefix missed here
+  # blocks real user traffic, while a prefix listed here only means that path
+  # stays in detect mode. Everything NOT matching still blocks, which is what
+  # catches scanners probing /.env, /wp-login.php, traversal on /static, etc.
+  exemptPaths:
+    - /api/
+    - /ollama/
+    - /openai/
+
+  # -- Path prefixes where Coraza is switched OFF entirely (ctl:ruleEngine=Off)
+  # for hosts on the `block-except-exempt-paths` set. DetectionOnly is not
+  # enough for uploads: the filter still buffers the whole request body, and
+  # Envoy answers 413 "Payload Too Large" once that passes ~64 KiB. With the
+  # engine Off the filter never reads the body, so nothing is buffered.
+  # Measured 2026-09-25: Open WebUI file uploads returned 413 above 64 KiB.
+  disabledPaths:
+    - /api/v1/files/
+
+  # -- Per-Host rule set. One of: detect, block, block-except-exempt-paths,
+  # disabled. The template rejects anything else.
+  perAuthority:
+    # Read-mostly UI, lowest blast radius - the first host taken to blocking.
+    falco.kscsc.local: block
+
+    # API plus frontend. Blocking, but this is the one to watch first if
+    # legitimate requests start returning 403.
+    myfinance.kscsc.local: block
+
+    # Open WebUI. Chat traffic CANNOT be blocked: users legitimately paste
+    # code, shell commands and markup into prompts, and CRS matches exactly
+    # that. Measured 2026-09-22 against real-looking prompts - "review this:
+    # <script>..." scored 20, "what does cat /etc/passwd do?" scored 10,
+    # a PHP question scored 15, all against an inbound threshold of 5. Those
+    # are not tunable away with a few exclusions; they are inherent to an LLM
+    # chat UI. So the API surface is detect-only and the rest blocks.
+    openui.kscsc.local: block-except-exempt-paths
+
+    # BloodHound ingests multi-MB JSON graph uploads, and @recommended-conf
+    # sets SecRequestBodyLimit to 128 KiB with SecRequestBodyLimitAction
+    # Reject. Blocking here would drop those uploads outright, so it stays in
+    # detect mode until that limit is raised for this host.
+    bloodhound.kscsc.local: detect
+
+    # step-ca issues every certificate in the cluster over ACME, including this
+    # gateway's own TLS. A false positive on a JWS POST would break renewal
+    # cluster-wide, so keep it out of scope entirely.
+    ca.kscsc.local: disabled
 
 # cert-manager Certificate — issued by step-ca, stored in this namespace for Gateway TLS
 certificate:
