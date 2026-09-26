@@ -18,15 +18,36 @@ data:
         {{- end }}
         fallthrough
       }
-      # This forward is NOT optional, and removing `fallthrough` is not a
-      # substitute for it. CoreDNS's hosts plugin returns through
-      # NextOrFailure, so with no plugin after it every name in this zone that
-      # is not listed above answers SERVFAIL. Pods carry `search ... {{ .Values.zone }}`
-      # with ndots:5, and glibc and c-ares abort the whole search chain on
-      # SERVFAIL (Go's resolver quietly continues, which is what hid this).
-      # The symptom is that pods cannot resolve external names such as
-      # ghcr.io, nor long svc.cluster.local FQDNs, while Go workloads and
-      # image pulls look perfectly healthy.
-      # Upstream answers NXDOMAIN for this zone, which lets the chain carry on.
-      forward . /etc/resolv.conf
+      # Something MUST answer after the hosts plugin. It returns through
+      # NextOrFailure, so with nothing behind it every name in this zone that is
+      # not listed above answers SERVFAIL (removing `fallthrough` does not help).
+      # Pods carry `search ... {{ .Values.zone }}` with ndots:5, and glibc and c-ares
+      # abort the whole search chain on SERVFAIL (Go's resolver quietly carries
+      # on, which is what hid this): pods then cannot resolve ghcr.io or long
+      # svc.cluster.local FQDNs while Go workloads look perfectly healthy.
+      # An earlier fix forwarded the zone upstream, but that leaked every
+      # internal name to the public resolvers and turned their timeouts back
+      # into SERVFAIL. This SOA-only zone answers authoritatively instead:
+      # NXDOMAIN, with an SOA so clients cache the negative answer.
+      file /etc/coredns/custom/{{ .Values.zone | replace "." "-" }}.db {{ .Values.zone }}
     }
+  # Loaded by the `file` plugin above; *.db is not matched by k3s's imports.
+  {{ .Values.zone | replace "." "-" }}.db: |
+    $ORIGIN {{ .Values.zone }}.
+    @ 3600 IN SOA ns.{{ .Values.zone }}. hostmaster.{{ .Values.zone }}. 1 7200 1800 1209600 {{ .Values.negativeTTL }}
+    @ 3600 IN NS  ns.{{ .Values.zone }}.
+{{- if and .Values.lanService.enabled .Values.lanService.acl.enabled }}
+  {{ .Values.zone | replace "." "-" }}.override: |
+    # Restrict the LAN from enumerating the internal Kubernetes zones. The rule
+    # is scoped to the zones on the first line so it only affects those: the
+    # external `forward .`, ordinary reverse lookups and the separate
+    # kscsc.local server block stay open to the LAN. Rules match first-wins,
+    # so the allowed sources (pods + node IPs) keep working even though they
+    # sit inside the blocked LAN subnet.
+    acl {{ join " " .Values.lanService.acl.zones }} {
+      {{- range .Values.lanService.acl.allowed }}
+      allow net {{ . }}
+      {{- end }}
+      block net {{ .Values.lanService.acl.blockedSubnet }}
+    }
+{{- end }}

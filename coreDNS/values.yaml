@@ -13,6 +13,10 @@ zone: kscsc.local
 # breaks resolution after a rebuild.
 envoyIP: "192.168.95.51"
 
+# -- Negative-cache TTL (seconds) for names not listed below: how long a client
+# remembers "does not exist" after a lookup of a name that is added later.
+negativeTTL: 60
+
 # -- Host entries served from the zone
 hosts:
   envoy:
@@ -33,9 +37,17 @@ hosts:
     # Proxmox orders certificates from the in-cluster CA.
     - ip: 192.168.95.200
       name: proxmox.kscsc.local
+    - ip: 192.168.95.201
+      name: gx10.kscsc.local
+    - ip: 192.168.95.201
+      name: comfyui.kscsc.local
+    - ip: 192.168.95.10
+      name: k8s.kscsc.local
+    - ip: 192.168.95.21
+      name: kali.kscsc.local
 
 # ---------------------------------------------------------------------------
-# CoreDNS Deployment patch (GPU toleration)
+# CoreDNS Deployment patch (GPU toleration + node placement)
 # ---------------------------------------------------------------------------
 patch:
   # -- Whether to continuously reconcile the CoreDNS deployment with the GPU toleration
@@ -52,3 +64,49 @@ patch:
     key: "nvidia.com/gpu"
     operator: "Exists"
     effect: "NoSchedule"
+  # -- Labels merged into the CoreDNS nodeSelector. Pins CoreDNS to the
+  # -- management node so the LAN DNS endpoint is stable and survives the GPU
+  # -- node going down. Set to null to leave placement to the scheduler.
+  nodeSelector:
+    kubernetes.io/hostname: k3subuntumaster
+
+# ---------------------------------------------------------------------------
+# LAN exposure of CoreDNS
+# ---------------------------------------------------------------------------
+# Point LAN clients (or a conditional forwarder for kscsc.local on the router)
+# at this IP. It also recurses for the LAN via the nodes' upstream resolvers;
+# the acl below keeps the Kubernetes zones hidden from LAN clients.
+lanService:
+  enabled: true
+  # Must fall inside the MetalLB pool 'first-pool' (192.168.95.50-192.168.95.60).
+  loadBalancerIP: "192.168.95.53"
+  externalTrafficPolicy: Local
+  # Access control for the LAN path. When CoreDNS is reachable from the LAN,
+  # LAN clients would otherwise be able to query cluster.local and enumerate
+  # internal service names (the returned cluster IPs are unreachable from the
+  # LAN, but the names are exposed). This adds a zone-scoped `acl` rule, via a
+  # *.override file, that blocks the whole LAN subnet from the internal zones
+  # while leaving the external `forward .` and the separate kscsc.local block
+  # fully open, so LAN clients can still resolve kscsc.local and outside names.
+  #
+  # `allowed` MUST list the node IPs as well as the pod CIDR: nodes and LAN
+  # clients share the LAN subnet, and host processes on the nodes resolve
+  # cluster.local via their node IP. Rules match first-wins and the allow lines
+  # are rendered before the block line, so the node IPs keep working even though they fall inside the blocked subnet.
+  acl:
+    enabled: true
+    # The internal (Kubernetes) zones to restrict for the LAN. Only the reverse
+    # zones of the pod (10.42/16) and service (10.43/16) CIDRs: blocking all of
+    # in-addr.arpa would break every ordinary PTR lookup for LAN clients.
+    zones:
+      - cluster.local
+      - 42.10.in-addr.arpa
+      - 43.10.in-addr.arpa
+    # The LAN subnet to block from the zones above.
+    blockedSubnet: "192.168.95.0/24"
+    # Source networks still allowed to query the zones above.
+    allowed:
+      - "10.42.0.0/16"      # pod CIDR
+      - "192.168.95.10"     # k3subuntumaster
+      - "192.168.95.11"     # k3subuntunodecpu
+      - "192.168.95.12"     # k3subuntunodegpu

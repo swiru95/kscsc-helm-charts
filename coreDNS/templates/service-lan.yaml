@@ -1,0 +1,30 @@
+{{- if .Values.lanService.enabled }}
+# Exposes the cluster CoreDNS on the LAN so client machines can resolve
+# {{ .Values.zone }} names. Selects the same pods as k3s's own kube-dns Service,
+# which stays untouched (k3s owns and re-applies it).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "coredns-custom.name" . }}-lan
+  namespace: kube-system
+  labels:
+    {{- include "coredns-custom.labels" . | nindent 4 }}
+  annotations:
+    metallb.io/loadBalancerIPs: {{ .Values.lanService.loadBalancerIP | quote }}
+spec:
+  type: LoadBalancer
+  # Local keeps the client source IP (visible in CoreDNS logs) and makes MetalLB
+  # announce the IP from the node that actually runs CoreDNS.
+  externalTrafficPolicy: {{ .Values.lanService.externalTrafficPolicy }}
+  selector:
+    k8s-app: kube-dns
+  ports:
+    - name: dns
+      port: 53
+      targetPort: 53
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 53
+      protocol: TCP
+{{- end }}

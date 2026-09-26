@@ -74,17 +74,45 @@ spec:
                   TOLERATION_KEY={{ .Values.patch.toleration.key | quote }}
                   TOLERATION_OPERATOR={{ .Values.patch.toleration.operator | quote }}
                   TOLERATION_EFFECT={{ .Values.patch.toleration.effect | quote }}
+                  CHANGED=0
+
+                  {{- with .Values.patch.nodeSelector }}
+
+                  # --- nodeSelector (pin CoreDNS to the management node) -------------------
+                  # We only care that our labels are present. k3s adds nodeSelector keys
+                  # of its own (e.g. kubernetes.io/os), so an exact-JSON comparison would
+                  # never match and re-patch forever. A merge patch sets our keys and
+                  # preserves the rest, so each key is checked on its own.
+                  CURRENT_SELECTOR=$(kubectl -n kube-system get deploy coredns \
+                    -o jsonpath='{.spec.template.spec.nodeSelector}')
+                  PINNED=1
+                  {{- range $k, $v := . }}
+                  echo "$CURRENT_SELECTOR" | grep -qF {{ printf "%q:%q" $k $v | squote }} || PINNED=0
+                  {{- end }}
+                  if [ "$PINNED" -eq 1 ]; then
+                    echo "CoreDNS nodeSelector already in place"
+                  else
+                    echo {{ printf "Applying CoreDNS nodeSelector %s" (toJson .) | squote }}
+                    kubectl -n kube-system patch deployment coredns --type=merge \
+                      -p={{ dict "spec" (dict "template" (dict "spec" (dict "nodeSelector" .))) | toJson | squote }}
+                    CHANGED=1
+                  fi
+                  {{- end }}
+
+                  # --- GPU toleration -----------------------------------------------------
                   EXISTING=$(kubectl -n kube-system get deploy coredns \
                     -o jsonpath='{.spec.template.spec.tolerations[*].key}')
-
                   if echo "$EXISTING" | grep -qw "$TOLERATION_KEY"; then
                     echo "Toleration for $TOLERATION_KEY already present"
-                    exit 0
+                  else
+                    echo "Adding toleration for $TOLERATION_KEY to CoreDNS deployment"
+                    kubectl -n kube-system patch deployment coredns --type=json \
+                      -p='[{"op":"add","path":"/spec/template/spec/tolerations/-","value":{"key":'"\"$TOLERATION_KEY\""',"operator":'"\"$TOLERATION_OPERATOR\""',"effect":'"\"$TOLERATION_EFFECT\""'}}]'
+                    CHANGED=1
                   fi
 
-                  echo "Adding toleration for $TOLERATION_KEY to CoreDNS deployment"
-                  kubectl -n kube-system patch deployment coredns --type=json \
-                    -p='[{"op":"add","path":"/spec/template/spec/tolerations/-","value":{"key":'"\"$TOLERATION_KEY\""',"operator":'"\"$TOLERATION_OPERATOR\""',"effect":'"\"$TOLERATION_EFFECT\""'}}]'
-                  kubectl -n kube-system rollout status deploy coredns --timeout=120s
-                  echo "CoreDNS toleration restored successfully"
+                  if [ "$CHANGED" -eq 1 ]; then
+                    kubectl -n kube-system rollout status deploy coredns --timeout=120s
+                  fi
+                  echo "CoreDNS reconciliation complete"
 {{- end }}

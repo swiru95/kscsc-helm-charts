@@ -28,3 +28,4 @@ helm upgrade --install metallb-config ./metallb \
 |---|---|
 | 192.168.95.50 | nginx ingress (`ingress-nginx`) |
 | 192.168.95.51 | Envoy Gateway (`envoy-gateway-system`) |
+| 192.168.95.53 | CoreDNS LAN DNS (`kube-system/coredns-custom-lan`) |
