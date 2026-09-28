@@ -170,7 +170,11 @@ coraza:
 
     # API plus frontend. Blocking, but this is the one to watch first if
     # legitimate requests start returning 403.
-    myfinance.kscsc.local: block
+    # Temporarily `detect` (2026-09-27): plain `block` keeps CRS's default
+    # allowed methods (GET HEAD POST OPTIONS), so rule 911100 403-ed every
+    # PUT/DELETE the app sends. Go back to blocking with the REST verbs
+    # admitted, not to plain `block`.
+    myfinance.kscsc.local: detect
 
     # Open WebUI. Chat traffic CANNOT be blocked: users legitimately paste
     # code, shell commands and markup into prompts, and CRS matches exactly
