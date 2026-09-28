@@ -5,7 +5,7 @@
 backend:
   image:
     repository: ghcr.io/swiru95/myfinance-backend
-    tag: "6ace65562d10c6a350479172405b461c4afaa587"
+    tag: "70bbc1e7ae557f94e4fca69cc3bc866e4dc1324d"
     pullPolicy: IfNotPresent
   service:
     port: 8000
@@ -19,7 +19,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/swiru95/myfinance-frontend
-    tag: "6ace65562d10c6a350479172405b461c4afaa587"
+    tag: "70bbc1e7ae557f94e4fca69cc3bc866e4dc1324d"
     pullPolicy: IfNotPresent
   service:
     port: 3000
