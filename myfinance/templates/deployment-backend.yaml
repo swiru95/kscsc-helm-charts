@@ -87,6 +87,25 @@ spec:
             - name: MYFINANCE_AUTH_REQUIRED_ROLE
               value: {{ .Values.auth.requiredRole | quote }}
 {{- end }}
+{{- if .Values.crypto.enabled }}
+            # Secret values, referenced by name only. Created by the operator
+            # outside the chart (see crypto: in values.yaml).
+            - name: MYFINANCE_SUBJECT_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: subject-pepper
+            - name: MYFINANCE_KEKS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: keks
+            - name: MYFINANCE_CONTACT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: contact-key
+{{- end }}
 {{- if .Values.llm.enabled }}
             - name: MYFINANCE_LLM_BASE_URL
               value: {{ .Values.llm.baseUrl | quote }}

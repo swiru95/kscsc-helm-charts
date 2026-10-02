@@ -5,7 +5,7 @@
 backend:
   image:
     repository: ghcr.io/swiru95/myfinance-backend
-    tag: "70bbc1e7ae557f94e4fca69cc3bc866e4dc1324d"
+    tag: "70133426c4aba7572c53106221fc029f0e7f3bbb"
     pullPolicy: IfNotPresent
   service:
     port: 8000
@@ -19,7 +19,7 @@ backend:
 frontend:
   image:
     repository: ghcr.io/swiru95/myfinance-frontend
-    tag: "70bbc1e7ae557f94e4fca69cc3bc866e4dc1324d"
+    tag: "70133426c4aba7572c53106221fc029f0e7f3bbb"
     pullPolicy: IfNotPresent
   service:
     port: 3000
@@ -109,6 +109,23 @@ auth:
   # enterprise application, this - not tenant membership - is the actual gate.
   # Empty would admit anybody in the tenant.
   requiredRole: MyFinance.User
+
+# --- Per-user encryption ----------------------------------------------------
+# The backend is multi-user and encrypts each user's data. Its secrets come from
+# a Kubernetes Secret that the operator creates by hand, outside this chart, so
+# no secret value ever lands in git or in `helm get values`. The chart only
+# names the Secret and its keys:
+#   subject-pepper  -> MYFINANCE_SUBJECT_PEPPER  (backend, schema job)
+#   keks            -> MYFINANCE_KEKS            (backend, schema job)
+#   contact-key     -> MYFINANCE_CONTACT_KEY     (backend only)
+#   bootstrap-sub   -> MYFINANCE_BOOTSTRAP_SUB   (schema job only, optional)
+# bootstrap-sub is read once, by the first migration that gives pre-existing
+# rows an owner; the operator deletes the key afterwards, which is why the
+# reference is optional. The backend refuses to start with auth on and these
+# missing, so create the Secret before the upgrade.
+crypto:
+  enabled: true
+  existingSecret: myfinance-crypto
 
 llm:
   enabled: true

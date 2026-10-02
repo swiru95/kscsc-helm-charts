@@ -23,7 +23,13 @@ To reach either service without the gateway:
   kubectl port-forward -n {{ .Release.Namespace }} deploy/{{ include "myfinance.frontendName" . }} {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }}
   kubectl port-forward -n {{ .Release.Namespace }} deploy/{{ include "myfinance.backendName" . }} {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
 
-{{- if .Values.pvc.enabled }}
+{{- if .Values.postgres.enabled }}
+
+The database is PostgreSQL ({{ include "myfinance.postgresHost" . }}). Back it up before upgrading the backend image,
+as the owner role through the Postgres pod (pg_dump over the local socket):
+  kubectl exec -n {{ .Release.Namespace }} sts/{{ include "myfinance.fullname" . }}-postgres -- \
+    pg_dump -U {{ .Values.postgres.ownerRole }} -d {{ .Values.postgres.database }} -Fc > myfinance.dump.bak-$(date +%Y%m%d-%H%M%S)
+{{- else if .Values.pvc.enabled }}
 
 The SQLite database lives on PVC {{ if .Values.pvc.name }}{{ .Values.pvc.name }}{{ else }}{{ include "myfinance.fullname" . }}-data{{ end }} ({{ .Values.pvc.size }}).
 Back it up before upgrading the backend image:
@@ -33,4 +39,10 @@ Back it up before upgrading the backend image:
 
 WARNING: pvc.enabled is false — the SQLite database is on an emptyDir and is
 lost when the backend pod restarts.
+{{- end }}
+{{- if .Values.crypto.enabled }}
+
+Per-user encryption: Secret {{ .Values.crypto.existingSecret }} must exist in this namespace before install/upgrade
+(keys: subject-pepper, keks, contact-key, and bootstrap-sub for the first migration only).
+Losing the pepper or the KEKs makes existing data unreadable; back the Secret up separately.
 {{- end }}

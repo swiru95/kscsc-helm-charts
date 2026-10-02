@@ -82,6 +82,42 @@ spec:
             - name: MYFINANCE_DATABASE_URL
               value: >-
                 postgresql+psycopg://{{ .Values.postgres.ownerRole }}@{{ include "myfinance.postgresHost" . }}:{{ .Values.postgres.service.port }}/{{ .Values.postgres.database }}?sslmode=verify-full&sslcert={{ .Values.postgres.autocert.mountPath }}/site.crt&sslkey=/tmp/client.key&sslrootcert={{ .Values.postgres.autocert.mountPath }}/root.crt
+{{- if .Values.auth.enabled }}
+            # Must match the backend exactly: the schema job hashes the
+            # bootstrap user's `sub` with the pepper and the *configured
+            # issuer*, which auth.issuer() derives from tenant + client id.
+            # MYFINANCE_BOOTSTRAP_ISS is left unset on purpose: it defaults to
+            # that same issuer, which is what the next login will use.
+            - name: MYFINANCE_AUTH_TENANT_ID
+              value: {{ required "auth.tenantId is required when auth.enabled" .Values.auth.tenantId | quote }}
+            - name: MYFINANCE_AUTH_CLIENT_ID
+              value: {{ required "auth.clientId is required when auth.enabled" .Values.auth.clientId | quote }}
+            - name: MYFINANCE_AUTH_API_SCOPE
+              value: {{ .Values.auth.apiScope | quote }}
+            - name: MYFINANCE_AUTH_REQUIRED_ROLE
+              value: {{ .Values.auth.requiredRole | quote }}
+{{- end }}
+{{- if .Values.crypto.enabled }}
+            - name: MYFINANCE_SUBJECT_PEPPER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: subject-pepper
+            - name: MYFINANCE_KEKS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: keks
+            # The operator deletes this key after the one-time migration, so
+            # the Job must still start without it. No contact key here: the
+            # schema job never touches it.
+            - name: MYFINANCE_BOOTSTRAP_SUB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.crypto.existingSecret }}
+                  key: bootstrap-sub
+                  optional: true
+{{- end }}
           # autocert mounts its certs volume into every container itself.
       volumes: []
       {{- with .Values.tolerations }}
