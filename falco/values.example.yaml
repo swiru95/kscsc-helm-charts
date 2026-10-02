@@ -1,7 +1,8 @@
 # Example values for the UPSTREAM falcosecurity/falco release (release name "falco").
 # Real values live in the private config/ submodule (falco__falco.yaml).
-# Nothing secret goes here: OIDC settings and the Redis password live in two
-# Secrets you create by hand, see README.md "Access".
+# Nothing secret anywhere: the setup is secretless. The UI's OIDC/ingest settings
+# are the Secret `falco-ui-auth` rendered by the falco-gw release (values block
+# `uiAuth`, tenantId/clientId), which must be installed first. See README.md.
 falcosidekick:
   enabled: true
   image:
@@ -29,7 +30,7 @@ falcosidekick:
     enabled: true
     disableauth: false
     user: ""                      # empty: the chart default would be admin:admin
-    existingSecret: falco-ui-auth # envFrom on the UI and its wait-redis init container
+    existingSecret: falco-ui-auth # rendered by falco-gw; envFrom on the UI and its wait-redis init container
     image:
       registry: ghcr.io
       repository: swiru95/falcosidekick-ui
@@ -38,5 +39,4 @@ falcosidekick:
       enabled: false              # routed by the falco-gw chart instead
     redis:
       enabled: true
-      existingSecret: falco-redis # keys REDIS_ARGS, REDIS_PASSWORD
-      password: set-via-existing-secret  # dummy, must be non-empty; see README
+      # No password: access is restricted by the NetworkPolicy (UI pods only).

@@ -2,6 +2,6 @@ apiVersion: v2
 name: falco
 description: Envoy Gateway routing and ingress NetworkPolicies for the Falco / Falcosidekick UI runtime-security stack (OIDC SSO + token-authenticated ingestion)
 type: application
-version: 0.2.0
+version: 0.3.0
 # Tracks the upstream falcosecurity/falco chart this route was written against.
 appVersion: "0.44.1"

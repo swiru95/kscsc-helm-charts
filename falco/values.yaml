@@ -11,8 +11,9 @@
 # route lives here instead, matching how openvas and step-ca are wired.
 #
 # Authentication (Entra ID SSO on the UI, bearer-token ingestion from Sidekick)
-# is configured in the UPSTREAM release's values plus two hand-made Secrets;
-# see README.md "Access". Nothing secret belongs in this file.
+# is configured in the UPSTREAM release's values plus the config Secret rendered
+# by this chart (uiAuth below). The whole setup is secretless; see README.md.
+# Nothing secret belongs in this file.
 
 gateway:
   name: envoy-gateway
@@ -45,3 +46,27 @@ networkPolicy:
   uiPort: 2802
   sidekickPort: 2801
   # The Envoy Gateway proxy namespace is taken from gateway.namespace above.
+
+# Config for the Falcosidekick UI, rendered as the Secret that the upstream
+# release references via falcosidekick.webui.existingSecret. It contains NO secret
+# material (public OIDC client with PKCE, no client secret). It is a Secret only
+# because the upstream chart can only envFrom a Secret, not a ConfigMap.
+uiAuth:
+  enabled: true
+  secretName: falco-ui-auth
+  # Entra ID tenant and the app registration's application (client) ID. Neither
+  # is secret; real values live in the private config repo.
+  tenantId: 00000000-0000-0000-0000-000000000000
+  clientId: 00000000-0000-0000-0000-000000000000
+  # Empty: derived from gateway.hostname.
+  redirectUrl: ""
+  postLogoutRedirectUrl: ""
+  scopes: openid,profile,email
+  usernameClaim: preferred_username
+  groupsClaim: roles
+  allowedGroups: Falco.Viewer
+  # Sidekick -> UI ingestion: validate the projected ServiceAccount token.
+  ingest:
+    issuer: https://kubernetes.default.svc.cluster.local
+    audience: falcosidekick-ui
+    allowedSubjects: system:serviceaccount:falco:falco-falcosidekick

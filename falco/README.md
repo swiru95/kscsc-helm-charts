@@ -9,7 +9,8 @@ out, and the Falcosidekick UI is the console you actually look at.
 
 ## What lives where
 
-This chart contains **the HTTPRoutes and optional NetworkPolicies**. Falco, its
+This chart contains **the HTTPRoutes, optional NetworkPolicies and the UI's
+auth-config Secret**. Falco, its
 driver DaemonSet, Falcosidekick and the UI all come from the upstream
 `falcosecurity/falco` chart (running our forked Sidekick and UI images).
 
@@ -20,7 +21,7 @@ cluster has no Ingress controller — Envoy Gateway terminates TLS at
 | Piece | Chart | Values |
 | --- | --- | --- |
 | Falco + Sidekick + UI | `falcosecurity/falco` | `falco__falco.yaml` |
-| HTTPRoutes, NetworkPolicies | this chart | `falco__falco-gw.yaml` |
+| HTTPRoutes, NetworkPolicies, UI config Secret | this chart | `falco__falco-gw.yaml` |
 
 `values.example.yaml` shows the upstream release's values with placeholders.
 
@@ -30,16 +31,19 @@ cluster has no Ingress controller — Envoy Gateway terminates TLS at
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo update falcosecurity
 
-# 0. The two Secrets from "Access" below (falco-ui-auth, falco-redis)
-
-# 1. The stack itself
-helm upgrade --install falco falcosecurity/falco -n falco --create-namespace \
-  -f "$V/falco__falco.yaml"
-
-# 2. The routes — after the release above, so the backend Service exists
-helm upgrade --install falco-gw "$CHARTS/falco" -n falco \
+# 1. falco-gw FIRST: creates the namespace, the falco-ui-auth config Secret the
+#    upstream release envFroms, the routes and the NetworkPolicies
+helm upgrade --install falco-gw "$CHARTS/falco" -n falco --create-namespace \
   -f "$V/falco__falco-gw.yaml"
+
+# 2. The stack itself
+helm upgrade --install falco falcosecurity/falco -n falco \
+  -f "$V/falco__falco.yaml"
 ```
+
+Order matters: without `falco-ui-auth` the UI pod sits in
+`CreateContainerConfigError`. The route may exist before its backend Service does;
+that is harmless.
 
 Then browse to <https://falco.kscsc.local>.
 
@@ -60,18 +64,41 @@ The stack runs the forked images `ghcr.io/swiru95/falcosidekick` and
 `ghcr.io/swiru95/falcosidekick-ui`. Their tags are commit SHAs: replace the
 `TAG_SET_AT_DEPLOY` placeholder in the values before upgrading.
 
-Basic auth is gone. Two hand-made Secrets carry everything sensitive; create
-both **before** `helm upgrade`, or the pods sit in `CreateContainerConfigError`.
+The setup is **secretless**: no passwords, no client secrets, no hand-made
+Secrets. Authentication rests on three things:
 
-### SSO (Entra ID)
+- **Browsers**: a public OIDC client with PKCE against Entra ID, gated by user
+  assignment and the `Falco.Viewer` app role.
+- **Sidekick -> UI ingestion**: a projected, short-lived ServiceAccount token.
+- **Redis**: no password at all; only the UI pods can reach it (NetworkPolicy).
 
-Browsers sign in through OIDC against Entra ID (tenant
-`1b3ec069-f45f-4b09-bb2d-5d7806950a5f`, v2.0 issuer). Register a **web** app with
-redirect URI `https://falco.kscsc.local/api/v1/auth/oidc/callback`, create a client
-secret, define the app role `Falco.Viewer` and assign it to the people allowed in.
+The UI's settings live in the Secret `falco-ui-auth`, rendered by this chart from
+the `uiAuth:` values block (`tenantId`, `clientId`, claims, ingest settings). It
+contains no secret material. It is a Secret instead of a ConfigMap only because
+the upstream chart can only `envFrom` a Secret (`falcosidekick.webui.existingSecret`).
+`tenantId` and `clientId` are identifiers, not credentials; the real ones are in
+the private config repo.
+
+### SSO (Entra ID, public client with PKCE)
+
+Tenant `1b3ec069-f45f-4b09-bb2d-5d7806950a5f`, v2.0 issuer. In the app
+registration:
+
+1. **Authentication**: add the **Mobile and desktop applications** platform (this
+   is what makes Entra treat it as a public client, so PKCE works without a
+   secret) with redirect URI
+   `https://falco.kscsc.local/api/v1/auth/oidc/callback`. Do not add a Web
+   platform.
+2. **Certificates & secrets**: create none.
+3. **App roles**: define `Falco.Viewer` (allowed member type: users/groups).
+4. **Enterprise application -> Properties**: **Assignment required = Yes**, then
+   assign the people allowed in to the `Falco.Viewer` role.
+
 Entra puts app roles in the `roles` claim, which the UI checks
 (`OIDC_GROUPS_CLAIM=roles`, `OIDC_ALLOWED_GROUPS=Falco.Viewer`); the display name
-comes from `preferred_username`. Anyone without the role is refused after login.
+comes from `preferred_username`. A public client is not a credential: anyone can
+start a login, so the gate is Entra refusing unassigned users plus the UI refusing
+tokens without the role.
 
 ### Ingestion auth (Sidekick -> UI)
 
@@ -83,61 +110,29 @@ subject `system:serviceaccount:falco:falco-falcosidekick` (the Sidekick pod's
 ServiceAccount), and fetches the signing keys using its own automounted CA and
 token (`/var/run/secrets/kubernetes.io/serviceaccount/{ca.crt,token}`). No extra
 RBAC is needed: `system:service-account-issuer-discovery` is bound to all
-ServiceAccounts by default. The Sidekick -> UI hop is still plain HTTP inside the
-cluster; the NetworkPolicies below limit who can sniff or reach it.
+ServiceAccounts by default.
 
-### Redis password
+### Redis
 
-Redis now requires a password. The upstream chart only wires the password anywhere
-when `webui.redis.password` is non-empty, so the values carry a dummy
-(`set-via-existing-secret`) and the real one comes from the Secrets, which win in
-`envFrom` order. Three consumers need it:
+Redis (`redis-stack`) runs **without a password**; the upstream values set
+`webui.redis.password` to nothing, so no `requirepass`, `REDIS_ARGS` or
+`REDIS_PASSWORD` is wired anywhere. Its only access control is the NetworkPolicy
+below (port 6379 from UI pods only). It holds the event history, so enable the
+policies (`networkPolicy.enabled: true`).
 
-| Consumer | Source | Key |
-| --- | --- | --- |
-| Redis StatefulSet (`redis-stack`) | Secret `falco-redis` | `REDIS_ARGS` (`--requirepass <pw>`) |
-| wait-redis init container | Secret `falco-ui-auth` | `REDIS_PASSWORD` |
-| UI | Secret `falco-ui-auth` | `FALCOSIDEKICK_UI_REDIS_PASSWORD` |
+### Residual risks
 
-### Create the Secrets
-
-Fill the three placeholders (Entra application/client ID, client secret) and run
-once. The Redis password is generated hex so it is safe inside `REDIS_ARGS`.
-
-```sh
-export KUBECONFIG=~/.kube/kscsc-new.yaml
-ENTRA_CLIENT_ID='<application-client-id>'
-ENTRA_CLIENT_SECRET='<client-secret-value>'
-REDIS_PW="$(openssl rand -hex 24)"
-SA=/var/run/secrets/kubernetes.io/serviceaccount
-
-kubectl get ns falco >/dev/null 2>&1 || kubectl create ns falco
-
-kubectl -n falco create secret generic falco-redis \
-  --from-literal=REDIS_ARGS="--requirepass ${REDIS_PW}" \
-  --from-literal=REDIS_PASSWORD="${REDIS_PW}" &&
-kubectl -n falco create secret generic falco-ui-auth \
-  --from-literal=REDIS_PASSWORD="${REDIS_PW}" \
-  --from-literal=FALCOSIDEKICK_UI_REDIS_PASSWORD="${REDIS_PW}" \
-  --from-literal=FALCOSIDEKICK_UI_AUTH_MODE=oidc \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_ISSUER='https://login.microsoftonline.com/1b3ec069-f45f-4b09-bb2d-5d7806950a5f/v2.0' \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_CLIENT_ID="${ENTRA_CLIENT_ID}" \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_CLIENT_SECRET="${ENTRA_CLIENT_SECRET}" \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_REDIRECT_URL='https://falco.kscsc.local/api/v1/auth/oidc/callback' \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_SCOPES='openid,profile,email' \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_USERNAME_CLAIM=preferred_username \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_GROUPS_CLAIM=roles \
-  --from-literal=FALCOSIDEKICK_UI_OIDC_ALLOWED_GROUPS=Falco.Viewer \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_AUTH=oidc \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_OIDC_ISSUER='https://kubernetes.default.svc.cluster.local' \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_OIDC_AUDIENCE=falcosidekick-ui \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_OIDC_ALLOWED_SUBJECTS='system:serviceaccount:falco:falco-falcosidekick' \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_OIDC_CA_FILE="${SA}/ca.crt" \
-  --from-literal=FALCOSIDEKICK_UI_INGEST_OIDC_JWKS_BEARER_FILE="${SA}/token"
-```
-
-Redis keeps its data on a PVC, so rotating the password later means updating both
-Secrets and restarting the Redis StatefulSet and the UI together.
+- **Redis is unauthenticated.** If the NetworkPolicies are off or not enforced
+  (CNI without policy support, a mistaken selector), any pod in the cluster can
+  read and wipe the event store. Verify enforcement after every CNI change.
+- **The ingest bearer travels over plain HTTP inside the cluster.** The token is
+  audience-bound, short-lived and only accepted for one subject, but a pod able to
+  sniff the Sidekick -> UI hop could replay it within its lifetime. The
+  NetworkPolicies limit who can reach the UI port, not who can observe the node
+  network.
+- The public client has no secret to leak, but also nothing that stops someone
+  from starting a login flow; protection depends entirely on Entra assignment and
+  the `Falco.Viewer` role. Keep **Assignment required = Yes**.
 
 ### NetworkPolicies
 
