@@ -1,6 +1,7 @@
 # Envoy Gateway routing for the Falco stack.
 #
-# This chart deliberately holds ONLY the HTTPRoutes. Falco itself, its driver
+# This chart holds the HTTPRoutes and, optionally, NetworkPolicies for the
+# stack. Falco itself, its driver
 # DaemonSet, Falcosidekick and the Falcosidekick UI all come from the upstream
 # falcosecurity/falco chart — see README.md for the install order.
 #
@@ -8,6 +9,10 @@
 # Ingress controller: Envoy Gateway terminates TLS at 192.168.95.51 and routes
 # by Gateway API HTTPRoute. So upstream's webui.ingress stays disabled and the
 # route lives here instead, matching how openvas and step-ca are wired.
+#
+# Authentication (Entra ID SSO on the UI, bearer-token ingestion from Sidekick)
+# is configured in the UPSTREAM release's values plus two hand-made Secrets;
+# see README.md "Access". Nothing secret belongs in this file.
 
 gateway:
   name: envoy-gateway
@@ -21,10 +26,22 @@ gateway:
   serviceName: falco-falcosidekick-ui
   servicePort: 2802
 
-  # Serve the UI on HTTPS only and 301 plain HTTP up to it. The UI is a
-  # basic-auth-protected event console, so no reason to answer on cleartext.
+  # Serve the UI on HTTPS only and 301 plain HTTP up to it. The UI is an
+  # authenticated (OIDC) event console, so no reason to answer on cleartext.
   httpDirect: false
 
   # The UI streams events over a long-lived connection; the Envoy default of 60s
   # would cut the feed every minute and make the dashboard look broken.
   timeout: 300s
+
+# Ingress-only NetworkPolicies for the upstream release's pods. Off by default so
+# a first install cannot lock itself out; turn on once the stack is healthy.
+networkPolicy:
+  enabled: false
+  # Helm release name of the upstream falcosecurity/falco chart; it is the
+  # app.kubernetes.io/instance label on every pod of the stack.
+  stackRelease: falco
+  redisPort: 6379
+  uiPort: 2802
+  sidekickPort: 2801
+  # The Envoy Gateway proxy namespace is taken from gateway.namespace above.
