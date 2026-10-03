@@ -52,9 +52,9 @@ kubectl -n autocert rollout restart deploy/autocert
 
 # 2. (Optional) Back up Redis if you are migrating from the upstream UI/Redis.
 #    PVC and data survive the helm upgrade.
-#    PVCNAME=$(kubectl -n falco get pvc -o name | grep falco-falcosidekick-ui-redis-data)
-#    kubectl -n falco exec "${PVCNAME%-data}" -- redis-cli BGSAVE
-#    kubectl -n falco cp "${PVCNAME%-data}:/data/dump.rdb" /tmp/redis-backup-dump.rdb
+#    kubectl -n falco exec falco-falcosidekick-ui-redis-0 -- redis-cli BGSAVE
+#    sleep 5
+#    kubectl -n falco cp falco-falcosidekick-ui-redis-0:/data/dump.rdb ~/falco-redis-dump-$(date +%Y%m%d).rdb
 
 # 3. Remove the old UI and Redis from the upstream Falco release.
 #    The PVC survives (it came from a volumeClaimTemplate; Helm does not delete it).
