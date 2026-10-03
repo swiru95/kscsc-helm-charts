@@ -52,6 +52,9 @@ ui:
 redis:
   enabled: true
   storageSize: 5Gi
+  # Name of an existing PersistentVolumeClaim to use for data. If empty, a
+  # volumeClaimTemplate will be created. Set to the live PVC name on upgrade.
+  existingClaim: ""
   resources:
     limits:
       cpu: 500m

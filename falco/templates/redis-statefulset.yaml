@@ -43,10 +43,12 @@ spec:
             - /var/run/autocert.step.sm/root.crt
             - --tls-auth-clients
             - "yes"
+            - --protected-mode
+            - "no"
             - --dir
             - /data
-            - --appendonly
-            - "yes"
+            - --save
+            - "3600 1 300 100 60 10000"
             - --loadmodule
             - /opt/redis-stack/lib/redisearch.so
             - --loadmodule
@@ -161,6 +163,12 @@ spec:
                   items:
                     - key: ca.crt
                       path: root.crt
+      {{- if .Values.redis.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.redis.existingClaim }}
+      {{- end }}
+  {{- if not .Values.redis.existingClaim }}
   volumeClaimTemplates:
     - metadata:
         name: data
@@ -170,4 +178,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.redis.storageSize | default "5Gi" }}
+  {{- end }}
 {{- end }}
