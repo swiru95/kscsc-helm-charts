@@ -28,10 +28,16 @@ cluster has no Ingress controller — Envoy Gateway terminates TLS at
 ## Installation
 
 ```sh
+# Define paths once at the top
+CHARTS=~/Projects/git-repos/kscsc-helm-charts
+V=$CHARTS/config/values
+CONFIG=$CHARTS/config
+
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo update falcosecurity
 
-# 0. Create the namespace with autocert label (enables mTLS cert injection)
+# 0. Create the namespace with autocert label (enables mTLS cert injection).
+#    autocert must be running with restrictCertificatesToNamespace: true.
 kubectl apply -f "$CONFIG/manifests/falco-namespace.yaml"
 
 # 1. falco-gw: creates the falco-ui-auth config Secret the upstream release envFroms,
@@ -74,6 +80,10 @@ The stack runs the forked images `ghcr.io/swiru95/falcosidekick` and
 The setup is **secretless**: no passwords, no client secrets, no hand-made
 Secrets. Authentication rests on three things:
 
+1. **Falco → Sidekick mTLS** via step-ca autocert
+2. **Secrets and authentication** for browsers, ingestion, and Redis
+3. **NetworkPolicies** restricting which pods can talk to which services
+
 ### Falco → Sidekick mTLS via step-ca autocert
 
 The Falco DaemonSet and Falcosidekick Deployment both carry
@@ -87,12 +97,16 @@ pod, writing:
 - `/var/run/autocert.step.sm/root.crt` — KSCSC root CA
 
 Falco's `http_output` block configures the HTTPS endpoint with client certs;
-Sidekick's `tlsserver` deploys as mTLS server. The server does not reload from
-disk; instead, it checks cert file mtimes at most once every 30 seconds
-(configurable, but 30s is appropriate for 24h certs) and reloads on change,
+Sidekick's `tlsserver` deploys as mTLS server with **hot reload**: it checks cert
+file contents (not mtimes) once every 30 seconds (fixed) and reloads on change,
 logging reloads and errors separately.
 
-Sidekick's `allowedclientsans` list restricts client certificates by their SubjectAlternativeName (or Subject.CommonName): only Falco's cert passes. An empty list accepts any cert signed by the CA, so it must be set if you run other pods in the namespace.
+Sidekick's `allowedclientsans` list restricts client certificates by their SubjectAlternativeName (or Subject.CommonName): only Falco's cert is accepted. The client identity is proved by:
+- the KSCSC root CA (Sidekick verifies the signature),
+- autocert's `restrictCertificatesToNamespace: true` (only pods in the `falco` namespace can request `falco.*.svc.cluster.local` names),
+- the `allowedclientsans` allowlist (Falco's SAN name).
+
+**Pods in the `falco` namespace are explicitly trusted.** Do not run untrusted workloads there. The Sidekick image must be the forked version with hot reload and SAN verification; an older image ignores `TLSSERVER_ALLOWEDCLIENTSANS` and would serve an expired cert after 24h.
 
 Probes use the plain-HTTP port `http-notls: 2810` (path `/ping` with no auth),
 while the secure port `:2801` stays for Falco only.
@@ -169,6 +183,15 @@ policies (`networkPolicy.enabled: true`).
   certificate from step-ca (same CA); Sidekick's `allowedclientsans` allowlist
   enforces that only Falco's cert is accepted. Keep the list populated and never
   add pods that should not reach Sidekick to the same namespace.
+- **Autocert webhook has `failurePolicy: Ignore`.** If the autocert mutating webhook is
+  down when a pod is created, the pod gets no certs. Sidekick then crash-loops visibly,
+  but Falco starts and silently fails to send events (no output, no errors). After any
+  node or pod churn, check that every Falco pod has an `autocert-renewer` container with
+  a `Ready` status.
+- **Alerts are lost during mTLS upgrades.** When the deployment adds or changes mTLS
+  settings, old and new pods run simultaneously: old pods use `http://` (pre-mTLS or different
+  port), new pods demand mTLS on `:2801`. Falco pods may briefly fail to connect. This is
+  expected and resolves within a minute as the rolling update completes.
 
 ### NetworkPolicies
 
