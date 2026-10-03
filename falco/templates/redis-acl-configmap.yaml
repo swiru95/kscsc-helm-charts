@@ -1,0 +1,13 @@
+{{- if .Values.redis.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-ui-redis-acl
+  labels:
+    app.kubernetes.io/name: falco-ui-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  users.acl: |
+    user default on nopass resetkeys ~* resetchannels -@all +ft.create +ft.info +ft.add +ft.search +ft.aggregate +expire +setex +get +getdel +set +del +ping
+{{- end }}

@@ -189,18 +189,26 @@ token (`/var/run/secrets/kubernetes.io/serviceaccount/{ca.crt,token}`). No extra
 RBAC is needed: `system:service-account-issuer-discovery` is bound to all
 ServiceAccounts by default.
 
-### Redis (TLS with hot-reload cert-reloader sidecar)
+### Redis (TLS with least-privilege default user and restart-based cert reload)
 
 Redis (`redis-stack:7.2.0-v11`, includes RediSearch + ReJSON) runs on TLS port 6379
 with client-cert verification (`tls-auth-clients yes`). It has **no password**; the
 only authentication is certificate verification by SAN. Its access control is:
 - TLS client certificate matching the expected SAN (`falco-ui.falco.svc.cluster.local`)
 - NetworkPolicy (port 6379 from UI pods only)
+- ACL-enforced least-privilege: the `default` user is restricted to only the commands
+  the UI actually needs (`FT.CREATE`, `FT.INFO`, `FT.ADD`, `FT.SEARCH`, `FT.AGGREGATE`,
+  `EXPIRE`, `SETEX`, `GET`, `GETDEL`, `SET`, `DEL`, `PING`), blocking dangerous
+  operations like `CONFIG SET`, `MODULE LOAD`, `EVAL`, `FLUSHALL`, `REPLICAOF`, etc.
 
-A `cert-reloader` sidecar watches the step-ca-injected certs and reloads Redis every
-60 seconds if they change (24h lifetime, rotated continuously). The sidecar runs
-`redis-cli CONFIG SET tls-cert-file/tls-key-file` with the latest paths; it logs
-every reload and errors (one line per event, model: myfinance postgres cert-reloader).
+Redis 7.2 cannot map client certificates to ACL users (that feature exists in Valkey
+7+), so every mTLS client is the `default` user. The ACL still blocks most dangerous
+commands and provides defense in depth. A liveness probe detects certificate renewals
+(24h lifetime, rotated continuously) by comparing SHA256(site.crt + site.key) against
+a hash written at startup. When the hash differs, the probe fails, triggering a pod
+restart that picks up the new cert. This happens about once a day for 30 seconds while
+the pod restarts; the data persists via RDB save on SIGTERM.
+
 Enable the policies (`networkPolicy.enabled: true`); without them, any pod can hit
 Redis and wipe the 7-day event history.
 
@@ -219,7 +227,8 @@ Every hop is authenticated:
 All certs have 24-hour lifetime and are rotated continuously by step-ca. Falco, Sidekick, UI,
 and Redis all carry `autocert.step.sm/name: <dns-name>` annotations so that autocert injects
 an init container (fetch initial cert) and a renewer sidecar (hot-reload on change).
-The UI and Redis also check cert freshness and reload via `cert-reloader` sidecars every 60s.
+The UI runs a cert-reloader sidecar that checks cert freshness every 30 seconds.
+Redis detects cert renewal via liveness probe and restarts to load the new cert.
 
 - **Probes**: Falco and Sidekick use a plain-HTTP probe port (notlsport). The UI
   probes `/api/v1/healthz` over HTTPS. Redis uses a TLS exec probe via `redis-cli --tls`.
@@ -233,10 +242,13 @@ The UI and Redis also check cert freshness and reload via `cert-reloader` sideca
   policy support, a mistaken selector), any pod in the cluster can reach Redis and wipe
   the event store, or reach the UI and ingest false events. Verify enforcement after
   every CNI change: `kubectl -n falco get pods` → all Ready, events still flowing.
-- **Redis cannot verify Sidekick's mTLS SAN.** Redis only checks the client cert's SAN
-  when the UI connects; it has no knowledge of Sidekick. The NetworkPolicy `falco-ui-redis:
-  6379 from falco-ui pods only` + TLS client-cert verification on the server side ensure
-  only the UI reaches Redis. Sidekick reaches the UI, not Redis, so the risk is low.
+- **Redis default user is shared by all mTLS clients.** Redis 7.2 cannot map client
+  certificates to ACL users, so every mTLS client is the `default` user. The ACL
+  restricts dangerous commands (CONFIG SET, MODULE LOAD, EVAL, FLUSHALL, etc.) so the
+  default user cannot disable itself. The NetworkPolicy `falco-ui-redis: 6379 from
+  falco-ui pods only` + TLS client-cert verification on the server side ensure only
+  the UI reaches Redis. Future work: Valkey 7+ supports certificate→user mapping;
+  switching there would enable per-client identity in Redis.
 - **Pod identity spoofing via shared CA.** All pods in the `falco` namespace obtain
   certs from the same KSCSC step-ca with `restrictCertificatesToNamespace: true`. Any
   pod in the namespace can request a `*.falco.svc.cluster.local` name and get a valid cert.
