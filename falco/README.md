@@ -38,7 +38,7 @@ helm repo update falcosecurity
 
 # 0. Create the namespace with autocert label (enables mTLS cert injection).
 #    autocert must be running with restrictCertificatesToNamespace: true.
-kubectl apply -f "$CONFIG/manifests/falco-namespace.yaml"
+kubectl apply -f "$CHARTS/config/manifests/falco-namespace.yaml"
 
 # 1. falco-gw: creates the falco-ui-auth config Secret the upstream release envFroms,
 #    the routes and the NetworkPolicies
