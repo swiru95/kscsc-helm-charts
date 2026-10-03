@@ -29,6 +29,8 @@ no TLS support (hard-coded HTTP probes, plaintext redis-cli ping, no hot reload)
 
 ## Installation
 
+First install, or migrating from upstream embedded UI/Redis:
+
 ```sh
 # Define paths once at the top
 CHARTS=~/Projects/git-repos/kscsc-helm-charts
@@ -42,38 +44,46 @@ helm repo update falcosecurity
 #    autocert must be running with restrictCertificatesToNamespace: true.
 kubectl apply -f "$CHARTS/config/manifests/falco-namespace.yaml"
 
-# 1. falco-gw: creates the UI Deployment, Redis StatefulSet, ConfigMap, routes,
-#    and NetworkPolicies. Install BEFORE the upstream release.
-helm upgrade --install falco-gw "$CHARTS/falco" -n falco --create-namespace \
-  -f "$V/falco__falco-gw.yaml"
+# 1. Upgrade autocert to ensure it is running with the latest config.
+#    Then restart the controller so new pods get injected correctly.
+helm upgrade --install autocert smallstep/autocert -n autocert --create-namespace \
+  -f "$V/autocert__autocert.yaml"
+kubectl -n autocert rollout restart deploy/autocert
 
-# 2. The upstream stack (Falco + Sidekick from falcosecurity/falco chart).
-#    Sidekick now posts to the falco-gw-managed UI over mTLS.
+# 2. (Optional) Back up Redis if you are migrating from the upstream UI/Redis.
+#    PVC and data survive the helm upgrade.
+#    PVCNAME=$(kubectl -n falco get pvc -o name | grep falco-falcosidekick-ui-redis-data)
+#    kubectl -n falco exec "${PVCNAME%-data}" -- redis-cli BGSAVE
+#    kubectl -n falco cp "${PVCNAME%-data}:/data/dump.rdb" /tmp/redis-backup-dump.rdb
+
+# 3. Remove the old UI and Redis from the upstream Falco release.
+#    The PVC survives (it came from a volumeClaimTemplate; Helm does not delete it).
 helm upgrade --install falco falcosecurity/falco -n falco \
   -f "$V/falco__falco.yaml"
-```
 
-Order matters:
-- The namespace must be labelled **before** Falco pods run (for autocert).
-- **falco-gw must be installed first** — it creates the UI Deployment, Redis
-  StatefulSet, and the ConfigMap the upstream Sidekick will connect to.
-- The upstream release's `webui.enabled: false` disables its embedded UI/Redis;
-  ours replace them.
-- The route may exist before its backend Service does (harmless).
+# 4. Wait for the old Redis pod to be deleted. It is StatefulSet pod 0.
+#    Two Redis on one RWO PVC directory will corrupt the data.
+kubectl -n falco wait --for=delete pod/falco-falcosidekick-ui-redis-0 --timeout=120s
+
+# 5. Now install the new falco-gw release with the UI and Redis. 
+#    It will mount the same PVC and keep the event history.
+helm upgrade --install falco-gw "$CHARTS/falco" -n falco \
+  -f "$V/falco__falco-gw.yaml"
+```
 
 Then browse to <https://falco.kscsc.local>.
 
-### Migration from upstream UI/Redis to this chart
+**Why this order:**
+- The namespace label must exist **before** any pod (for autocert injection).
+- **autocert must be upgraded and restarted first** — new pods created after that
+  get mutated with cert volumes; existing pods are unaffected.
+- **Remove the old upstream UI/Redis before creating the new ones** — the
+  `redis.existingClaim` value in `falco-gw` points to the old PVC name. A local-path
+  PVC is RWO (ReadWriteOnce), so only one pod can mount it at a time. If two Redis
+  servers run against the same PVC directory at once, the data will be corrupted.
+  The old StatefulSet pod must be fully gone before the new one mounts it.
+- Waiting for pod deletion ensures clean data handoff.
 
-If you are upgrading from a release that deployed the upstream UI and Redis:
-
-1. Back up Redis: `kubectl -n falco get pvc` notes the PVC name; it survives the helm upgrade.
-2. `helm upgrade falco-gw ...` (new values as above).
-3. `helm upgrade falco falcosecurity/falco ... -f <values with webui.enabled: false>` — this removes
-   the upstream Deployment, Redis StatefulSet, and their Services, but **leaves the PVC untouched**.
-4. The new `falco-gw` release's StatefulSet picks up the same PVC by name.
-   Keep `redis.storageSize` in the falco-gw values the same as the old one (5Gi). Expected
-   brief alert loss while Sidekick and UI migrate to the new pods.
 
 ## Prerequisites outside this chart
 

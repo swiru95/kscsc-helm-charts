@@ -101,9 +101,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
-            - name: autocert
-              mountPath: /var/run/autocert.step.sm
-              readOnly: true
           {{- if .Values.redis.resources }}
           resources:
             {{- toYaml .Values.redis.resources | nindent 12 }}
@@ -142,10 +139,6 @@ spec:
             capabilities:
               drop:
                 - ALL
-          volumeMounts:
-            - name: autocert
-              mountPath: /var/run/autocert.step.sm
-              readOnly: true
           {{- if .Values.redis.certReloader.resources }}
           resources:
             {{- toYaml .Values.redis.certReloader.resources | nindent 12 }}
@@ -155,14 +148,6 @@ spec:
         {{- toYaml .Values.redis.nodeSelector | nindent 8 }}
       {{- end }}
       volumes:
-        - name: autocert
-          projected:
-            sources:
-              - configMap:
-                  name: falco-kscsc-root-ca
-                  items:
-                    - key: ca.crt
-                      path: root.crt
       {{- if .Values.redis.existingClaim }}
         - name: data
           persistentVolumeClaim:
