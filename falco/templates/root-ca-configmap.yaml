@@ -1,0 +1,13 @@
+{{- if and .Values.ui.enabled .Values.rootCA }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-kscsc-root-ca
+  labels:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  ca.crt: |
+{{ .Values.rootCA | indent 4 }}
+{{- end }}

@@ -1,0 +1,24 @@
+{{- if .Values.ui.enabled }}
+  {{- if not .Values.rootCA }}
+    {{- fail "UI is enabled but rootCA is empty. Set rootCA to the root certificate PEM from config/values/autocert__autocert.yaml" }}
+  {{- end }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: falco-ui
+  validation:
+    hostname: falco-ui.falco.svc.cluster.local
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: falco-kscsc-root-ca
+{{- end }}

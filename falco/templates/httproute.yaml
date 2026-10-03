@@ -11,8 +11,8 @@ spec:
     - {{ .Values.gateway.hostname }}
   rules:
     - backendRefs:
-        - name: {{ .Values.gateway.serviceName }}
-          port: {{ .Values.gateway.servicePort }}
+        - name: falco-ui
+          port: 2802
       timeouts:
         request: {{ .Values.gateway.timeout }}
         backendRequest: {{ .Values.gateway.timeout }}

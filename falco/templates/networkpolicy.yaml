@@ -1,0 +1,79 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+  Ingress-only policies for the upstream falcosecurity/falco release. Egress is
+  left open on purpose: the UI must reach Entra ID and the API server (JWKS),
+  Sidekick must reach whatever outputs are configured. Selecting a pod with any
+  Ingress policy turns every OTHER ingress path to it off, so each allow below
+  is the complete list for that pod.
+*/ -}}
+{{- $np := .Values.networkPolicy }}
+{{- $inst := $np.stackRelease }}
+---
+# Redis: only the UI pod may talk to it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-redis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: falco-ui-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falco-ui
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.redisPort }}
+---
+# UI: Sidekick pods (event ingestion) and the Envoy Gateway proxy (browsers).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-ui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: falco-ui
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falcosidekick
+              app.kubernetes.io/instance: {{ $inst }}
+              app.kubernetes.io/component: core
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.gateway.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.uiPort }}
+---
+# Sidekick: only the Falco DaemonSet pods may post events.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-sidekick
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: falcosidekick
+      app.kubernetes.io/instance: {{ $inst }}
+      app.kubernetes.io/component: core
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falco
+              app.kubernetes.io/instance: {{ $inst }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.sidekickPort }}
+{{- end }}

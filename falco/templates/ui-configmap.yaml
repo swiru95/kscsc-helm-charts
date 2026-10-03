@@ -1,0 +1,46 @@
+{{- if .Values.ui.enabled }}
+{{- /*
+  Configuration for the Falcosidekick UI (OIDC login + ingest auth + TLS settings).
+  All settings (OIDC, ingest, TLS, Redis) are in this ConfigMap; no secret material.
+*/ -}}
+{{- $u := .Values.uiAuth }}
+{{- $ui := .Values.ui }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-ui-config
+data:
+  # OIDC authentication (browser login)
+  FALCOSIDEKICK_UI_AUTH_MODE: oidc
+  FALCOSIDEKICK_UI_OIDC_ISSUER: {{ printf "https://login.microsoftonline.com/%s/v2.0" $u.tenantId | quote }}
+  FALCOSIDEKICK_UI_OIDC_CLIENT_ID: {{ $u.clientId | quote }}
+  FALCOSIDEKICK_UI_OIDC_REDIRECT_URL: {{ default (printf "https://%s/api/v1/auth/oidc/callback" .Values.gateway.hostname) $u.redirectUrl | quote }}
+  FALCOSIDEKICK_UI_OIDC_POST_LOGOUT_REDIRECT_URL: {{ default (printf "https://%s/" .Values.gateway.hostname) $u.postLogoutRedirectUrl | quote }}
+  FALCOSIDEKICK_UI_OIDC_SCOPES: {{ $u.scopes | quote }}
+  FALCOSIDEKICK_UI_OIDC_USERNAME_CLAIM: {{ $u.usernameClaim | quote }}
+  FALCOSIDEKICK_UI_OIDC_GROUPS_CLAIM: {{ $u.groupsClaim | quote }}
+  FALCOSIDEKICK_UI_OIDC_ALLOWED_GROUPS: {{ $u.allowedGroups | quote }}
+  # Ingest authentication (Sidekick bearer token + mTLS)
+  FALCOSIDEKICK_UI_INGEST_AUTH: oidc
+  FALCOSIDEKICK_UI_INGEST_OIDC_ISSUER: {{ $u.ingest.issuer | quote }}
+  FALCOSIDEKICK_UI_INGEST_OIDC_AUDIENCE: {{ $u.ingest.audience | quote }}
+  FALCOSIDEKICK_UI_INGEST_OIDC_ALLOWED_SUBJECTS: {{ $u.ingest.allowedSubjects | quote }}
+  FALCOSIDEKICK_UI_INGEST_OIDC_CA_FILE: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  FALCOSIDEKICK_UI_INGEST_OIDC_JWKS_BEARER_FILE: /var/run/secrets/kubernetes.io/serviceaccount/token
+  # mTLS on ingest: only Sidekick (SAN: falco-falcosidekick.falco.svc.cluster.local) is allowed
+  FALCOSIDEKICK_UI_INGEST_MTLS_ALLOWED_SANS: falco-falcosidekick.falco.svc.cluster.local
+  # TLS server (HTTPS)
+  FALCOSIDEKICK_UI_TLS_CERT_FILE: /var/run/autocert.step.sm/site.crt
+  FALCOSIDEKICK_UI_TLS_KEY_FILE: /var/run/autocert.step.sm/site.key
+  FALCOSIDEKICK_UI_TLS_CLIENT_CA_FILE: /var/run/autocert.step.sm/root.crt
+  # Redis connection (mTLS)
+  FALCOSIDEKICK_UI_REDIS_URL: falco-ui-redis.falco.svc.cluster.local:6379
+  FALCOSIDEKICK_UI_REDIS_TLS: "true"
+  FALCOSIDEKICK_UI_REDIS_TLS_CA_FILE: /var/run/autocert.step.sm/root.crt
+  FALCOSIDEKICK_UI_REDIS_TLS_CERT_FILE: /var/run/autocert.step.sm/site.crt
+  FALCOSIDEKICK_UI_REDIS_TLS_KEY_FILE: /var/run/autocert.step.sm/site.key
+  # UI settings
+  FALCOSIDEKICK_UI_TTL: {{ $ui.ttl | quote }}
+  FALCOSIDEKICK_UI_LOGLEVEL: info
+{{- end }}

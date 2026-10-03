@@ -1,0 +1,66 @@
+# Example values for the UPSTREAM falcosecurity/falco release (release name "falco").
+# Real values live in the private config/ submodule (falco__falco.yaml).
+# Nothing secret anywhere: the setup is secretless. The UI (Deployment) and Redis
+# (StatefulSet) are managed by the falco-gw release, not the upstream chart.
+# Install falco-gw BEFORE the upstream falco release. See README.md.
+podAnnotations:
+  autocert.step.sm/name: falco.falco.svc.cluster.local  # Falco DaemonSet gets TLS certs from step-ca
+falco:
+  http_output:
+    enabled: true
+    url: https://falco-falcosidekick.falco.svc.cluster.local:2801/
+    insecure: false
+    mtls: true
+    client_cert: /var/run/autocert.step.sm/site.crt
+    client_key: /var/run/autocert.step.sm/site.key
+    ca_cert: /var/run/autocert.step.sm/root.crt
+    keep_alive: false     # new connection per alert so renewed certs are picked up
+falcosidekick:
+  enabled: true
+  podAnnotations:
+    autocert.step.sm/name: falco-falcosidekick.falco.svc.cluster.local  # Sidekick gets TLS certs from step-ca
+  image:
+    registry: ghcr.io
+    repository: swiru95/falcosidekick
+    tag: TAG_SET_AT_DEPLOY        # commit SHA of the fork build
+  # Falco -> Sidekick mTLS: certs from step-ca, 24h lifetime, hot-reloaded every 30s.
+  # Probes use the plain-HTTP notlsport.
+  config:
+    tlsserver:
+      deploy: true
+      mutualtls: true
+      certfile: /var/run/autocert.step.sm/site.crt
+      keyfile: /var/run/autocert.step.sm/site.key
+      cacertfile: /var/run/autocert.step.sm/root.crt
+      notlsport: 2810
+      notlspaths: "/ping"
+    # Sidekick -> UI output: mTLS to the falco-gw-managed UI.
+    webui:
+      url: https://falco-ui.falco.svc.cluster.local:2802
+      mutualtls: true
+      checkcert: true
+    mutualtlsclient:
+      certfile: /var/run/autocert.step.sm/site.crt
+      keyfile: /var/run/autocert.step.sm/site.key
+      cacertfile: /var/run/autocert.step.sm/root.crt
+    # Sidekick -> UI ingestion: a projected ServiceAccount token, rotated by kubelet.
+    extraEnv:
+    - name: WEBUI_TOKENFILE
+      value: /var/run/secrets/tokens/falcosidekick-ui
+    - name: TLSSERVER_ALLOWEDCLIENTSANS
+      value: falco.falco.svc.cluster.local  # Falco pods only; others from same CA rejected
+  extraVolumes:
+  - name: ui-token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: falcosidekick-ui
+          expirationSeconds: 3600
+          path: falcosidekick-ui
+  extraVolumeMounts:
+  - name: ui-token
+    mountPath: /var/run/secrets/tokens
+    readOnly: true
+  webui:
+    # UI is managed by falco-gw; upstream webui must be disabled.
+    enabled: false
