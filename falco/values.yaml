@@ -48,7 +48,8 @@ ui:
   nodeSelector:
     kscsc.local/role: cpu
 
-# Redis pod: TLS, cert-reloader sidecar, RediSearch + ReJSON modules.
+# Redis pod: TLS with mTLS cert verification, RediSearch + ReJSON modules,
+# least-privilege ACL, and memory cap.
 redis:
   enabled: true
   storageSize: 5Gi
@@ -62,14 +63,30 @@ redis:
     requests:
       cpu: 50m
       memory: 128Mi
-  certReloader:
-    resources:
-      limits:
-        cpu: 100m
-        memory: 128Mi
-      requests:
-        cpu: 10m
-        memory: 64Mi
+  # Least-privilege ACL commands list. Rendered in redis-acl-configmap.yaml
+  # as +<cmd> entries for the default user. Must include all commands the UI
+  # actually uses; see redis-statefulset command restriction enforcement via liveness
+  # probe (cert renewal detection).
+  aclCommands:
+    - ft.create
+    - ft.info
+    - ft.add
+    - ft.search
+    - ft.aggregate
+    - expire
+    - setex
+    - get
+    - getdel
+    - set
+    - del
+    - ping
+  # Memory limit for Redis. Prevents unbounded growth if an attacker with a
+  # CA certificate gets past the NetworkPolicy. The pod's memory request is
+  # 128Mi; this leaves headroom before the 512Mi limit OOM-kills the pod.
+  maxmemory: 384mb
+  # Eviction policy when maxmemory is reached. volatile-ttl evicts keys closest
+  # to expiry first, preserving the oldest events in the store.
+  maxmemoryPolicy: volatile-ttl
   nodeSelector:
     kscsc.local/role: cpu
 

@@ -9,5 +9,5 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   users.acl: |
-    user default on nopass resetkeys ~* resetchannels -@all +ft.create +ft.info +ft.add +ft.search +ft.aggregate +expire +setex +get +getdel +set +del +ping
+    user default on nopass resetkeys ~* resetchannels -@all {{ range .Values.redis.aclCommands }}+{{ . }} {{ end -}}
 {{- end }}

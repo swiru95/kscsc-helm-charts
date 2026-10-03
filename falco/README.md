@@ -11,7 +11,7 @@ out, and the Falcosidekick UI is the console you actually look at.
 
 This chart now contains:
 - **HTTPRoutes** for the UI (Envoy Gateway routing)
-- **UI Deployment and Redis StatefulSet** (TLS-enabled, auto-cert, hot-reload certs)
+- **UI Deployment and Redis StatefulSet** (TLS-enabled, auto-cert, hot-reload certs for UI; restart-based reload for Redis)
 - **NetworkPolicies** for ingress control
 - **UI configuration** (ConfigMap with OIDC + ingestion settings, TLS settings)
 - **BackendTLSPolicy** for Envoy → UI TLS validation
@@ -147,8 +147,9 @@ while the secure port `:2801` stays for Falco only.
 - **Sidekick → UI ingestion**: a projected, short-lived ServiceAccount token (bearer auth)
   plus mTLS with Sidekick's step-ca cert.
 - **UI → Redis**: mTLS, both sides using step-ca certs from autocert.
-- **Redis authentication**: no password; access control via NetworkPolicy (UI pods only)
-  plus TLS client-certificate verification on the server side.
+- **Redis authentication**: no password; access control via NetworkPolicy (UI pods only),
+  TLS client-certificate verification, and least-privilege ACL restricting the default user
+  to read/write commands the UI actually needs.
 
 The UI's configuration lives in the ConfigMap `falco-ui-config`, rendered by this chart
 from the `uiAuth:` values block (OIDC settings, ingest settings) plus new TLS settings
@@ -191,10 +192,10 @@ ServiceAccounts by default.
 
 ### Redis (TLS with least-privilege default user and restart-based cert reload)
 
-Redis (`redis-stack:7.2.0-v11`, includes RediSearch + ReJSON) runs on TLS port 6379
+Redis (`redis-stack-server:7.2.0-v11`, includes RediSearch + ReJSON) runs on TLS port 6379
 with client-cert verification (`tls-auth-clients yes`). It has **no password**; the
-only authentication is certificate verification by SAN. Its access control is:
-- TLS client certificate matching the expected SAN (`falco-ui.falco.svc.cluster.local`)
+only authentication is certificate verification. Redis accepts any client certificate signed by the KSCSC root; it cannot tell clients apart. Who can obtain such a certificate in namespace falco is limited by autocert's restrictCertificatesToNamespace, and who can connect is limited by the NetworkPolicy. Its access control is:
+- TLS client certificate signed by the KSCSC root (mTLS verification)
 - NetworkPolicy (port 6379 from UI pods only)
 - ACL-enforced least-privilege: the `default` user is restricted to only the commands
   the UI actually needs (`FT.CREATE`, `FT.INFO`, `FT.ADD`, `FT.SEARCH`, `FT.AGGREGATE`,
@@ -206,8 +207,7 @@ Redis 7.2 cannot map client certificates to ACL users (that feature exists in Va
 commands and provides defense in depth. A liveness probe detects certificate renewals
 (24h lifetime, rotated continuously) by comparing SHA256(site.crt + site.key) against
 a hash written at startup. When the hash differs, the probe fails, triggering a pod
-restart that picks up the new cert. This happens about once a day for 30 seconds while
-the pod restarts; the data persists via RDB save on SIGTERM.
+restart that picks up the new cert. Redis restarts after each certificate renewal (detected by the liveness probe within 30–60 s); the restart itself takes about a second, plus up to 5 s until readiness. Events Sidekick posts to the UI in that window get HTTP 500 and are dropped for the UI output (Sidekick does not retry). Data persists: Redis saves the RDB on SIGTERM.
 
 Enable the policies (`networkPolicy.enabled: true`); without them, any pod can hit
 Redis and wipe the 7-day event history.
@@ -222,12 +222,12 @@ Every hop is authenticated:
 | Sidekick → UI (mTLS ingestion) | mTLS | step-ca autocert | `falco-falcosidekick.falco.svc.cluster.local` | Client SAN via mTLS middleware |
 | Sidekick → UI (bearer token output) | HTTPS (TLS only) | step-ca autocert | — | Certificate + ServiceAccount token validation |
 | Envoy → UI | mTLS (BackendTLSPolicy) | step-ca autocert | none (one-way TLS) | Server hostname `falco-ui.falco.svc.cluster.local` |
-| UI → Redis | mTLS | step-ca autocert | `falco-ui.falco.svc.cluster.local` | Server checks client SAN |
+| UI → Redis | mTLS | step-ca autocert | `falco-ui.falco.svc.cluster.local` | Server accepts any certificate signed by KSCSC root; NetworkPolicy limits client identity |
 
 All certs have 24-hour lifetime and are rotated continuously by step-ca. Falco, Sidekick, UI,
 and Redis all carry `autocert.step.sm/name: <dns-name>` annotations so that autocert injects
 an init container (fetch initial cert) and a renewer sidecar (hot-reload on change).
-The UI runs a cert-reloader sidecar that checks cert freshness every 30 seconds.
+The UI reloads renewed certificates in-process (content check every 30 s).
 Redis detects cert renewal via liveness probe and restarts to load the new cert.
 
 - **Probes**: Falco and Sidekick use a plain-HTTP probe port (notlsport). The UI
@@ -244,11 +244,13 @@ Redis detects cert renewal via liveness probe and restarts to load the new cert.
   every CNI change: `kubectl -n falco get pods` → all Ready, events still flowing.
 - **Redis default user is shared by all mTLS clients.** Redis 7.2 cannot map client
   certificates to ACL users, so every mTLS client is the `default` user. The ACL
-  restricts dangerous commands (CONFIG SET, MODULE LOAD, EVAL, FLUSHALL, etc.) so the
-  default user cannot disable itself. The NetworkPolicy `falco-ui-redis: 6379 from
-  falco-ui pods only` + TLS client-cert verification on the server side ensure only
-  the UI reaches Redis. Future work: Valkey 7+ supports certificate→user mapping;
-  switching there would enable per-client identity in Redis.
+  blocks CONFIG (SET/GET), MODULE (LOAD), EVAL/FUNCTION, FLUSHALL/FLUSHDB, REPLICAOF,
+  SAVE/SHUTDOWN, ACL, CLIENT, KEYS/SCAN, MONITOR, FT.DROPINDEX/FT.ALTER, HSET and other
+  dangerous operations, so the default user cannot disable itself. However, for any client
+  that gets past the NetworkPolicy with a CA certificate, the following remains possible:
+  read all events via FT.SEARCH, delete them via FT.AGGREGATE + DEL, write arbitrary keys
+  including UI session keys via SET. **The NetworkPolicy is the real boundary for Redis.**
+  Future work: Valkey 8.1+ can map client certificates to ACL users (`tls-auth-clients-user`), but a spike showed the UI is not compatible with valkey-search (it uses FT.ADD, legacy FT.CREATE without PREFIX, GROUPBY on TEXT fields and infix search). Moving requires rewriting the UI's Redis layer first.
 - **Pod identity spoofing via shared CA.** All pods in the `falco` namespace obtain
   certs from the same KSCSC step-ca with `restrictCertificatesToNamespace: true`. Any
   pod in the namespace can request a `*.falco.svc.cluster.local` name and get a valid cert.
@@ -283,8 +285,7 @@ Falco pods do not use host networking, so the pod selector matches them. k3s
 enforces policies with its embedded kube-router controller. Kubelet probes come
 from the node IP and kube-router lets node-local traffic through, but this is
 the first thing to check after enabling: `kubectl -n falco get pods` must stay
-`Ready` (UI probes `/api/v1/healthz` on 2802, Sidekick probes 2801, Redis is a TCP
-probe on 6379). Also confirm events still arrive and the console loads.
+`Ready` (UI probes `/api/v1/healthz` on 2802, Sidekick probes 2801, Redis uses an exec TLS PING probe with certificate hash comparison for restart detection). Also confirm events still arrive and the console loads.
 Anything else that needs those ports (a Prometheus scrape, a debug pod) has to
 be added to the policies.
 

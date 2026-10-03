@@ -45,6 +45,8 @@ spec:
                 --protected-mode no \
                 --dir /data \
                 --save "3600 1 300 100 60 10000" \
+                --maxmemory {{ .Values.redis.maxmemory }} \
+                --maxmemory-policy {{ .Values.redis.maxmemoryPolicy }} \
                 --loadmodule /opt/redis-stack/lib/redisearch.so \
                 --loadmodule /opt/redis-stack/lib/rejson.so \
                 --aclfile /etc/redis/acl/users.acl
@@ -58,10 +60,7 @@ spec:
                 - sh
                 - -c
                 - |
-                  if ! sha256sum /var/run/autocert.step.sm/site.crt /var/run/autocert.step.sm/site.key | cmp - /tmp/loaded-cert.sha256 2>/dev/null; then
-                    echo "certificate renewed, restarting to load it"
-                    exit 1
-                  fi
+                  sha256sum /var/run/autocert.step.sm/site.crt /var/run/autocert.step.sm/site.key | cmp -s - /tmp/loaded-cert.sha256 || exit 1
                   redis-cli --tls --cert /var/run/autocert.step.sm/site.crt --key /var/run/autocert.step.sm/site.key --cacert /var/run/autocert.step.sm/root.crt -h 127.0.0.1 -p 6379 ping | grep -q PONG
             initialDelaySeconds: 10
             periodSeconds: 30
