@@ -1,0 +1,173 @@
+{{- if .Values.redis.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: falco-ui-redis
+  labels:
+    app.kubernetes.io/name: falco-ui-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  serviceName: falco-ui-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: falco-ui-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        autocert.step.sm/name: falco-ui-redis.falco.svc.cluster.local
+      labels:
+        app.kubernetes.io/name: falco-ui-redis
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: "redis/redis-stack-server:7.2.0-v11"
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - --port
+            - "0"
+            - --tls-port
+            - "6379"
+            - --tls-cert-file
+            - /var/run/autocert.step.sm/site.crt
+            - --tls-key-file
+            - /var/run/autocert.step.sm/site.key
+            - --tls-ca-cert-file
+            - /var/run/autocert.step.sm/root.crt
+            - --tls-auth-clients
+            - "yes"
+            - --dir
+            - /data
+            - --appendonly
+            - "yes"
+            - --loadmodule
+            - /opt/redis-stack/lib/redisearch.so
+            - --loadmodule
+            - /opt/redis-stack/lib/rejson.so
+          ports:
+            - name: https
+              containerPort: 6379
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - --tls
+                - --cert
+                - /var/run/autocert.step.sm/site.crt
+                - --key
+                - /var/run/autocert.step.sm/site.key
+                - --cacert
+                - /var/run/autocert.step.sm/root.crt
+                - -h
+                - 127.0.0.1
+                - -p
+                - "6379"
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - --tls
+                - --cert
+                - /var/run/autocert.step.sm/site.crt
+                - --key
+                - /var/run/autocert.step.sm/site.key
+                - --cacert
+                - /var/run/autocert.step.sm/root.crt
+                - -h
+                - 127.0.0.1
+                - -p
+                - "6379"
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: autocert
+              mountPath: /var/run/autocert.step.sm
+              readOnly: true
+          {{- if .Values.redis.resources }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          {{- end }}
+        - name: cert-reloader
+          image: "redis/redis-stack-server:7.2.0-v11"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              CERT_FILE="/var/run/autocert.step.sm/site.crt"
+              KEY_FILE="/var/run/autocert.step.sm/site.key"
+              LAST_HASH=""
+              
+              while true; do
+                CURRENT_HASH=$(sha256sum "$CERT_FILE" "$KEY_FILE" | awk '{print $1}' | tr '\n' ':')
+                
+                if [ "$CURRENT_HASH" != "$LAST_HASH" ] && [ -n "$LAST_HASH" ]; then
+                  echo "Certificate changed, reloading..."
+                  if redis-cli --tls --cert "$CERT_FILE" --key "$KEY_FILE" --cacert /var/run/autocert.step.sm/root.crt -h 127.0.0.1 -p 6379 CONFIG SET tls-cert-file "$CERT_FILE" tls-key-file "$KEY_FILE" | grep -q OK; then
+                    LAST_HASH="$CURRENT_HASH"
+                    echo "Certificate reloaded successfully at $(date)"
+                  else
+                    echo "Failed to reload certificate at $(date)"
+                  fi
+                else
+                  LAST_HASH="$CURRENT_HASH"
+                fi
+                
+                sleep 60
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: autocert
+              mountPath: /var/run/autocert.step.sm
+              readOnly: true
+          {{- if .Values.redis.certReloader.resources }}
+          resources:
+            {{- toYaml .Values.redis.certReloader.resources | nindent 12 }}
+          {{- end }}
+      {{- if .Values.redis.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.redis.nodeSelector | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: autocert
+          projected:
+            sources:
+              - configMap:
+                  name: falco-kscsc-root-ca
+                  items:
+                    - key: ca.crt
+                      path: root.crt
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: {{ .Values.redis.storageSize | default "5Gi" }}
+{{- end }}

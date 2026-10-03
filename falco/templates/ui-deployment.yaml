@@ -1,0 +1,78 @@
+{{- if .Values.ui.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: falco-ui
+  labels:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.ui.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: falco-ui
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        autocert.step.sm/name: falco-ui.falco.svc.cluster.local
+      labels:
+        app.kubernetes.io/name: falco-ui
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: falco-ui
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1234
+        runAsGroup: 1234
+        fsGroup: 1234
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: https
+              containerPort: 2802
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: falco-ui-config
+          livenessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.ui.resources }}
+          resources:
+            {{- toYaml .Values.ui.resources | nindent 12 }}
+          {{- end }}
+      {{- if .Values.ui.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.ui.nodeSelector | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

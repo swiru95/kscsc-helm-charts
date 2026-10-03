@@ -1,0 +1,20 @@
+{{- if .Values.ui.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: falco-ui
+  labels:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 2802
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

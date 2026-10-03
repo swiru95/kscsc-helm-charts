@@ -22,11 +22,6 @@ gateway:
   httpListenerName: http
   hostname: falco.kscsc.local
 
-  # Service published by the upstream chart's webui.
-  # Named "<release>-falcosidekick-ui"; with release "falco" that is:
-  serviceName: falco-falcosidekick-ui
-  servicePort: 2802
-
   # Serve the UI on HTTPS only and 301 plain HTTP up to it. The UI is an
   # authenticated (OIDC) event console, so no reason to answer on cleartext.
   httpDirect: false
@@ -34,6 +29,46 @@ gateway:
   # The UI streams events over a long-lived connection; the Envoy default of 60s
   # would cut the feed every minute and make the dashboard look broken.
   timeout: 300s
+
+# UI pod: HTTPS, mTLS ingestion from Sidekick, OIDC browser login, Redis backend.
+ui:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/swiru95/falcosidekick-ui
+    tag: TAG_SET_AT_DEPLOY
+  ttl: 604800
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  nodeSelector:
+    kscsc.local/role: cpu
+
+# Redis pod: TLS, cert-reloader sidecar, RediSearch + ReJSON modules.
+redis:
+  enabled: true
+  storageSize: 5Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  certReloader:
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 64Mi
+  nodeSelector:
+    kscsc.local/role: cpu
 
 # Ingress-only NetworkPolicies for the upstream release's pods. Off by default so
 # a first install cannot lock itself out; turn on once the stack is healthy.
@@ -47,13 +82,11 @@ networkPolicy:
   sidekickPort: 2801
   # The Envoy Gateway proxy namespace is taken from gateway.namespace above.
 
-# Config for the Falcosidekick UI, rendered as the Secret that the upstream
-# release references via falcosidekick.webui.existingSecret. It contains NO secret
-# material (public OIDC client with PKCE, no client secret). It is a Secret only
-# because the upstream chart can only envFrom a Secret, not a ConfigMap.
+# Config for the Falcosidekick UI: OIDC + ingestion settings. Contains NO secret
+# material (public OIDC client with PKCE, no client secret). Rendered as a ConfigMap
+# that the UI pod envFroms.
 uiAuth:
   enabled: true
-  secretName: falco-ui-auth
   # Entra ID tenant and the app registration's application (client) ID. Neither
   # is secret; real values live in the private config repo.
   tenantId: 00000000-0000-0000-0000-000000000000
@@ -70,3 +103,7 @@ uiAuth:
     issuer: https://kubernetes.default.svc.cluster.local
     audience: falcosidekick-ui
     allowedSubjects: system:serviceaccount:falco:falco-falcosidekick
+
+# KSCSC root CA certificate for TLS validation (BackendTLSPolicy, UI probe).
+# Copy from config/values/autocert__autocert.yaml root_ca.crt. Empty: skip BackendTLSPolicy.
+rootCA: ""

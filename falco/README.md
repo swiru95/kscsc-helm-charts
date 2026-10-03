@@ -9,19 +9,21 @@ out, and the Falcosidekick UI is the console you actually look at.
 
 ## What lives where
 
-This chart contains **the HTTPRoutes, optional NetworkPolicies and the UI's
-auth-config Secret**. Falco, its
-driver DaemonSet, Falcosidekick and the UI all come from the upstream
-`falcosecurity/falco` chart (running our forked Sidekick and UI images).
+This chart now contains:
+- **HTTPRoutes** for the UI (Envoy Gateway routing)
+- **UI Deployment and Redis StatefulSet** (TLS-enabled, auto-cert, hot-reload certs)
+- **NetworkPolicies** for ingress control
+- **UI configuration** (ConfigMap with OIDC + ingestion settings, TLS settings)
+- **BackendTLSPolicy** for Envoy → UI TLS validation
 
-The split exists because the upstream chart can only emit an `Ingress`, and this
-cluster has no Ingress controller — Envoy Gateway terminates TLS at
-`192.168.95.51` and routes by Gateway API. The same split is used by `step-ca`.
+Falco and Falcosidekick come from the upstream `falcosecurity/falco` chart (our forked
+Sidekick image). We manage the UI and Redis here because the upstream chart offers
+no TLS support (hard-coded HTTP probes, plaintext redis-cli ping, no hot reload).
 
 | Piece | Chart | Values |
 | --- | --- | --- |
-| Falco + Sidekick + UI | `falcosecurity/falco` | `falco__falco.yaml` |
-| HTTPRoutes, NetworkPolicies, UI config Secret | this chart | `falco__falco-gw.yaml` |
+| Falco + Sidekick | `falcosecurity/falco` | `falco__falco.yaml` |
+| HTTPRoutes, UI Deployment, Redis StatefulSet, NetworkPolicies, BackendTLSPolicy | this chart | `falco__falco-gw.yaml` |
 
 `values.example.yaml` shows the upstream release's values with placeholders.
 
@@ -40,21 +42,38 @@ helm repo update falcosecurity
 #    autocert must be running with restrictCertificatesToNamespace: true.
 kubectl apply -f "$CHARTS/config/manifests/falco-namespace.yaml"
 
-# 1. falco-gw: creates the falco-ui-auth config Secret the upstream release envFroms,
-#    the routes and the NetworkPolicies
-helm upgrade --install falco-gw "$CHARTS/falco" -n falco \
+# 1. falco-gw: creates the UI Deployment, Redis StatefulSet, ConfigMap, routes,
+#    and NetworkPolicies. Install BEFORE the upstream release.
+helm upgrade --install falco-gw "$CHARTS/falco" -n falco --create-namespace \
   -f "$V/falco__falco-gw.yaml"
 
-# 2. The stack itself
+# 2. The upstream stack (Falco + Sidekick from falcosecurity/falco chart).
+#    Sidekick now posts to the falco-gw-managed UI over mTLS.
 helm upgrade --install falco falcosecurity/falco -n falco \
   -f "$V/falco__falco.yaml"
 ```
 
-Order matters: the namespace must be labelled before Falco pods run (for autocert),
-without `falco-ui-auth` the UI pod sits in `CreateContainerConfigError`, and the
-route may exist before its backend Service does (that is harmless).
+Order matters:
+- The namespace must be labelled **before** Falco pods run (for autocert).
+- **falco-gw must be installed first** — it creates the UI Deployment, Redis
+  StatefulSet, and the ConfigMap the upstream Sidekick will connect to.
+- The upstream release's `webui.enabled: false` disables its embedded UI/Redis;
+  ours replace them.
+- The route may exist before its backend Service does (harmless).
 
 Then browse to <https://falco.kscsc.local>.
+
+### Migration from upstream UI/Redis to this chart
+
+If you are upgrading from a release that deployed the upstream UI and Redis:
+
+1. Back up Redis: `kubectl -n falco get pvc` notes the PVC name; it survives the helm upgrade.
+2. `helm upgrade falco-gw ...` (new values as above).
+3. `helm upgrade falco falcosecurity/falco ... -f <values with webui.enabled: false>` — this removes
+   the upstream Deployment, Redis StatefulSet, and their Services, but **leaves the PVC untouched**.
+4. The new `falco-gw` release's StatefulSet picks up the same PVC by name.
+   Keep `redis.storageSize` in the falco-gw values the same as the old one (5Gi). Expected
+   brief alert loss while Sidekick and UI migrate to the new pods.
 
 ## Prerequisites outside this chart
 
@@ -115,15 +134,17 @@ while the secure port `:2801` stays for Falco only.
 
 - **Browsers**: a public OIDC client with PKCE against Entra ID, gated by user
   assignment and the `Falco.Viewer` app role.
-- **Sidekick -> UI ingestion**: a projected, short-lived ServiceAccount token.
-- **Redis**: no password at all; only the UI pods can reach it (NetworkPolicy).
+- **Sidekick → UI ingestion**: a projected, short-lived ServiceAccount token (bearer auth)
+  plus mTLS with Sidekick's step-ca cert.
+- **UI → Redis**: mTLS, both sides using step-ca certs from autocert.
+- **Redis authentication**: no password; access control via NetworkPolicy (UI pods only)
+  plus TLS client-certificate verification on the server side.
 
-The UI's settings live in the Secret `falco-ui-auth`, rendered by this chart from
-the `uiAuth:` values block (`tenantId`, `clientId`, claims, ingest settings). It
-contains no secret material. It is a Secret instead of a ConfigMap only because
-the upstream chart can only `envFrom` a Secret (`falcosidekick.webui.existingSecret`).
-`tenantId` and `clientId` are identifiers, not credentials; the real ones are in
-the private config repo.
+The UI's configuration lives in the ConfigMap `falco-ui-config`, rendered by this chart
+from the `uiAuth:` values block (OIDC settings, ingest settings) plus new TLS settings
+(cert/key files, allowed mTLS SANs for ingestion, Redis connection TLS). It contains
+no secret material. `tenantId` and `clientId` are identifiers, not credentials; the
+real ones are in the private config repo.
 
 ### SSO (Entra ID, public client with PKCE)
 
@@ -158,31 +179,63 @@ token (`/var/run/secrets/kubernetes.io/serviceaccount/{ca.crt,token}`). No extra
 RBAC is needed: `system:service-account-issuer-discovery` is bound to all
 ServiceAccounts by default.
 
-### Redis
+### Redis (TLS with hot-reload cert-reloader sidecar)
 
-Redis (`redis-stack`) runs **without a password**; the upstream values set
-`webui.redis.password` to nothing, so no `requirepass`, `REDIS_ARGS` or
-`REDIS_PASSWORD` is wired anywhere. Its only access control is the NetworkPolicy
-below (port 6379 from UI pods only). It holds the event history, so enable the
-policies (`networkPolicy.enabled: true`).
+Redis (`redis-stack:7.2.0-v11`, includes RediSearch + ReJSON) runs on TLS port 6379
+with client-cert verification (`tls-auth-clients yes`). It has **no password**; the
+only authentication is certificate verification by SAN. Its access control is:
+- TLS client certificate matching the expected SAN (`falco-ui.falco.svc.cluster.local`)
+- NetworkPolicy (port 6379 from UI pods only)
+
+A `cert-reloader` sidecar watches the step-ca-injected certs and reloads Redis every
+60 seconds if they change (24h lifetime, rotated continuously). The sidecar runs
+`redis-cli CONFIG SET tls-cert-file/tls-key-file` with the latest paths; it logs
+every reload and errors (one line per event, model: myfinance postgres cert-reloader).
+Enable the policies (`networkPolicy.enabled: true`); without them, any pod can hit
+Redis and wipe the 7-day event history.
+
+### TLS Architecture
+
+Every hop is authenticated:
+
+| Hop | Protocol | Cert Issuer | Client Cert | Server Verifies |
+| --- | --- | --- | --- | --- |
+| Falco → Sidekick `:2801` | mTLS | step-ca autocert | `falco.falco.svc.cluster.local` | Client SAN vs allowedclientsans |
+| Sidekick → UI (mTLS ingestion) | mTLS | step-ca autocert | `falco-falcosidekick.falco.svc.cluster.local` | Client SAN via mTLS middleware |
+| Sidekick → UI (bearer token output) | HTTPS (TLS only) | step-ca autocert | — | Certificate + ServiceAccount token validation |
+| Envoy → UI | mTLS (BackendTLSPolicy) | step-ca autocert | none (one-way TLS) | Server hostname `falco-ui.falco.svc.cluster.local` |
+| UI → Redis | mTLS | step-ca autocert | `falco-ui.falco.svc.cluster.local` | Server checks client SAN |
+
+All certs have 24-hour lifetime and are rotated continuously by step-ca. Falco, Sidekick, UI,
+and Redis all carry `autocert.step.sm/name: <dns-name>` annotations so that autocert injects
+an init container (fetch initial cert) and a renewer sidecar (hot-reload on change).
+The UI and Redis also check cert freshness and reload via `cert-reloader` sidecars every 60s.
+
+- **Probes**: Falco and Sidekick use a plain-HTTP probe port (notlsport). The UI
+  probes `/api/v1/healthz` over HTTPS. Redis uses a TLS exec probe via `redis-cli --tls`.
+- **Hostname verification**: Each service verifies the peer's hostname (SAN or CN) to ensure
+  it is talking to the right pod (not a different pod in the cluster with a different cert).
+- **NetworkPolicies** restrict the network paths, but TLS provides cryptographic proof of identity.
 
 ### Residual risks
 
-- **Redis is unauthenticated.** If the NetworkPolicies are off or not enforced
-  (CNI without policy support, a mistaken selector), any pod in the cluster can
-  read and wipe the event store. Verify enforcement after every CNI change.
-- **The ingest bearer travels over plain HTTP inside the cluster.** The token is
-  audience-bound, short-lived and only accepted for one subject, but a pod able to
-  sniff the Sidekick -> UI hop could replay it within its lifetime. The
-  NetworkPolicies limit who can reach the UI port, not who can observe the node
-  network.
-- The public client has no secret to leak, but also nothing that stops someone
-  from starting a login flow; protection depends entirely on Entra assignment and
-  the `Falco.Viewer` role. Keep **Assignment required = Yes**.
-- **Falco → Sidekick uses mTLS.** Any pod in the falco namespace can obtain a
-  certificate from step-ca (same CA); Sidekick's `allowedclientsans` allowlist
-  enforces that only Falco's cert is accepted. Keep the list populated and never
-  add pods that should not reach Sidekick to the same namespace.
+- **NetworkPolicies must be enforced.** If they are off or not enforced (CNI without
+  policy support, a mistaken selector), any pod in the cluster can reach Redis and wipe
+  the event store, or reach the UI and ingest false events. Verify enforcement after
+  every CNI change: `kubectl -n falco get pods` → all Ready, events still flowing.
+- **Redis cannot verify Sidekick's mTLS SAN.** Redis only checks the client cert's SAN
+  when the UI connects; it has no knowledge of Sidekick. The NetworkPolicy `falco-ui-redis:
+  6379 from falco-ui pods only` + TLS client-cert verification on the server side ensure
+  only the UI reaches Redis. Sidekick reaches the UI, not Redis, so the risk is low.
+- **Pod identity spoofing via shared CA.** All pods in the `falco` namespace obtain
+  certs from the same KSCSC step-ca with `restrictCertificatesToNamespace: true`. Any
+  pod in the namespace can request a `*.falco.svc.cluster.local` name and get a valid cert.
+  Sidekick's `TLSSERVER_ALLOWEDCLIENTSANS` allowlist and the UI's mTLS ingestion middleware
+  validate the peer's identity cryptographically. Do not run untrusted workloads in the
+  `falco` namespace.
+- The public client (Entra ID) has no secret to leak, but also nothing that stops someone
+  from starting a login flow; protection depends entirely on Entra assignment and the
+  `Falco.Viewer` role. Keep **Assignment required = Yes**.
 - **Autocert webhook has `failurePolicy: Ignore`.** If the autocert mutating webhook is
   down when a pod is created, the pod gets no certs. Sidekick then crash-loops visibly,
   but Falco starts and silently fails to send events (no output, no errors). After any
@@ -200,9 +253,9 @@ open: the UI needs Entra ID and the API server, Sidekick its outputs):
 
 | Pod | Port | Allowed from |
 | --- | --- | --- |
-| Redis (`component=ui-redis`) | 6379 | UI pods (`component=ui`) only |
-| UI (`component=ui`) | 2802 | Sidekick pods (`component=core`) and namespace `envoy-gateway-system` |
-| Sidekick (`component=core`) | 2801 | Falco DaemonSet pods (`name=falco`) only |
+| Redis (`app.kubernetes.io/name=falco-ui-redis`) | 6379 | UI pods (`app.kubernetes.io/name=falco-ui`) only |
+| UI (`app.kubernetes.io/name=falco-ui`) | 2802 | Sidekick pods and namespace `envoy-gateway-system` |
+| Sidekick (`app.kubernetes.io/name=falcosidekick`, `app.kubernetes.io/component=core`) | 2801 | Falco DaemonSet pods (`app.kubernetes.io/name=falco`) only |
 
 Falco pods do not use host networking, so the pod selector matches them. k3s
 enforces policies with its embedded kube-router controller. Kubelet probes come

@@ -1,0 +1,21 @@
+{{- if .Values.redis.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: falco-ui-redis
+  labels:
+    app.kubernetes.io/name: falco-ui-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  clusterIP: None
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: https
+      protocol: TCP
+      name: redis
+  selector:
+    app.kubernetes.io/name: falco-ui-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

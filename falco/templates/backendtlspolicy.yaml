@@ -1,0 +1,22 @@
+{{- if and .Values.ui.enabled .Values.rootCA }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: {{ .Release.Name }}-ui
+  labels:
+    app.kubernetes.io/name: falco-ui
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  targetRef:
+    group: ""
+    kind: Service
+    name: falco-ui
+    namespace: {{ .Release.Namespace }}
+  validation:
+    hostname: falco-ui.falco.svc.cluster.local
+  caCertificateRefs:
+    - group: ""
+      kind: ConfigMap
+      name: falco-kscsc-root-ca
+{{- end }}

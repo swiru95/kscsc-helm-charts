@@ -9,7 +9,7 @@
 {{- $np := .Values.networkPolicy }}
 {{- $inst := $np.stackRelease }}
 ---
-# Redis: only the UI pod (Deployment + its wait-redis init container) may talk to it.
+# Redis: only the UI pod may talk to it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -17,17 +17,15 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: falcosidekick
-      app.kubernetes.io/instance: {{ $inst }}
-      app.kubernetes.io/component: ui-redis
+      app.kubernetes.io/name: falco-ui-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: falcosidekick
-              app.kubernetes.io/instance: {{ $inst }}
-              app.kubernetes.io/component: ui
+              app.kubernetes.io/name: falco-ui
+              app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - protocol: TCP
           port: {{ $np.redisPort }}
@@ -40,9 +38,8 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: falcosidekick
-      app.kubernetes.io/instance: {{ $inst }}
-      app.kubernetes.io/component: ui
+      app.kubernetes.io/name: falco-ui
+      app.kubernetes.io/instance: {{ .Release.Name }}
   policyTypes: [Ingress]
   ingress:
     - from:
