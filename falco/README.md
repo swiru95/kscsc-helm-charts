@@ -31,9 +31,12 @@ cluster has no Ingress controller — Envoy Gateway terminates TLS at
 helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 helm repo update falcosecurity
 
-# 1. falco-gw FIRST: creates the namespace, the falco-ui-auth config Secret the
-#    upstream release envFroms, the routes and the NetworkPolicies
-helm upgrade --install falco-gw "$CHARTS/falco" -n falco --create-namespace \
+# 0. Create the namespace with autocert label (enables mTLS cert injection)
+kubectl apply -f "$CONFIG/manifests/falco-namespace.yaml"
+
+# 1. falco-gw: creates the falco-ui-auth config Secret the upstream release envFroms,
+#    the routes and the NetworkPolicies
+helm upgrade --install falco-gw "$CHARTS/falco" -n falco \
   -f "$V/falco__falco-gw.yaml"
 
 # 2. The stack itself
@@ -41,9 +44,9 @@ helm upgrade --install falco falcosecurity/falco -n falco \
   -f "$V/falco__falco.yaml"
 ```
 
-Order matters: without `falco-ui-auth` the UI pod sits in
-`CreateContainerConfigError`. The route may exist before its backend Service does;
-that is harmless.
+Order matters: the namespace must be labelled before Falco pods run (for autocert),
+without `falco-ui-auth` the UI pod sits in `CreateContainerConfigError`, and the
+route may exist before its backend Service does (that is harmless).
 
 Then browse to <https://falco.kscsc.local>.
 
@@ -57,6 +60,10 @@ Both are already committed, but they are easy to forget when adding the next hos
   `envoy-gateway-system__envoy-resources.yaml`. The gateway serves one
   cert for all hosts; a name missing from the SAN list still routes, but every
   browser throws a certificate warning.
+- **Namespace label for mTLS** — The `falco` namespace must be labelled
+  `autocert.step.sm: enabled` so that Falco and Sidekick pods can opt into
+  step-ca autocert. Create it with `config/manifests/falco-namespace.yaml`
+  before any other Falco install.
 
 ## Access
 
@@ -66,6 +73,31 @@ The stack runs the forked images `ghcr.io/swiru95/falcosidekick` and
 
 The setup is **secretless**: no passwords, no client secrets, no hand-made
 Secrets. Authentication rests on three things:
+
+### Falco → Sidekick mTLS via step-ca autocert
+
+The Falco DaemonSet and Falcosidekick Deployment both carry
+`autocert.step.sm/name: <dns-name>` annotations. The step-ca autocert controller
+injects an init container (fetches initial certs) and a renewer sidecar into each
+pod, writing:
+
+- `/var/run/autocert.step.sm/site.crt` — leaf cert, 24-hour lifetime, rewritten
+  in place on renewal
+- `/var/run/autocert.step.sm/site.key` — TLS key
+- `/var/run/autocert.step.sm/root.crt` — KSCSC root CA
+
+Falco's `http_output` block configures the HTTPS endpoint with client certs;
+Sidekick's `tlsserver` deploys as mTLS server. The server does not reload from
+disk; instead, it checks cert file mtimes at most once every 30 seconds
+(configurable, but 30s is appropriate for 24h certs) and reloads on change,
+logging reloads and errors separately.
+
+Sidekick's `allowedclientsans` list restricts client certificates by their SubjectAlternativeName (or Subject.CommonName): only Falco's cert passes. An empty list accepts any cert signed by the CA, so it must be set if you run other pods in the namespace.
+
+Probes use the plain-HTTP port `http-notls: 2810` (path `/ping` with no auth),
+while the secure port `:2801` stays for Falco only.
+
+### Secrets and authentication
 
 - **Browsers**: a public OIDC client with PKCE against Entra ID, gated by user
   assignment and the `Falco.Viewer` app role.
@@ -133,6 +165,10 @@ policies (`networkPolicy.enabled: true`).
 - The public client has no secret to leak, but also nothing that stops someone
   from starting a login flow; protection depends entirely on Entra assignment and
   the `Falco.Viewer` role. Keep **Assignment required = Yes**.
+- **Falco → Sidekick uses mTLS.** Any pod in the falco namespace can obtain a
+  certificate from step-ca (same CA); Sidekick's `allowedclientsans` allowlist
+  enforces that only Falco's cert is accepted. Keep the list populated and never
+  add pods that should not reach Sidekick to the same namespace.
 
 ### NetworkPolicies
 
@@ -157,9 +193,8 @@ be added to the policies.
 ## Drivers
 
 `driver.kind` is `auto`, so each node picks for itself: `modern_ebpf` where the
-kernel exposes CO-RE BTF, otherwise the kernel module. The two workers run
-6.8.0-generic and take the eBPF path; the control-plane node runs a `-pve`
-kernel, which is why the choice is left per-node rather than pinned.
+kernel exposes CO-RE BTF, otherwise the kernel module. All three nodes —
+including the control-plane `-pve` node — run the modern eBPF probe.
 
 Check what each node actually chose:
 

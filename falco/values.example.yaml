@@ -3,17 +3,43 @@
 # Nothing secret anywhere: the setup is secretless. The UI's OIDC/ingest settings
 # are the Secret `falco-ui-auth` rendered by the falco-gw release (values block
 # `uiAuth`, tenantId/clientId), which must be installed first. See README.md.
+podAnnotations:
+  autocert.step.sm/name: falco.falco.svc.cluster.local  # Falco DaemonSet gets TLS certs from step-ca
+falco:
+  http_output:
+    enabled: true
+    url: https://falco-falcosidekick.falco.svc.cluster.local:2801/
+    insecure: false
+    mtls: true
+    client_cert: /var/run/autocert.step.sm/site.crt
+    client_key: /var/run/autocert.step.sm/site.key
+    ca_cert: /var/run/autocert.step.sm/root.crt
+    keep_alive: false     # new connection per alert so renewed certs are picked up
 falcosidekick:
   enabled: true
+  podAnnotations:
+    autocert.step.sm/name: falco-falcosidekick.falco.svc.cluster.local  # Sidekick gets TLS certs from step-ca
   image:
     registry: ghcr.io
     repository: swiru95/falcosidekick
     tag: TAG_SET_AT_DEPLOY        # commit SHA of the fork build
-  # Sidekick -> UI ingestion: a projected ServiceAccount token, rotated by kubelet.
+  # Falco -> Sidekick mTLS: certs from step-ca, 24h lifetime, hot-reloaded every 30s.
+  # Probes use the plain-HTTP notlsport.
   config:
+    tlsserver:
+      deploy: true
+      mutualtls: true
+      certfile: /var/run/autocert.step.sm/site.crt
+      keyfile: /var/run/autocert.step.sm/site.key
+      cacertfile: /var/run/autocert.step.sm/root.crt
+      notlsport: 2810
+      notlspaths: "/ping"
+    # Sidekick -> UI ingestion: a projected ServiceAccount token, rotated by kubelet.
     extraEnv:
     - name: WEBUI_TOKENFILE
       value: /var/run/secrets/tokens/falcosidekick-ui
+    - name: TLSSERVER_ALLOWEDCLIENTSANS
+      value: falco.falco.svc.cluster.local  # Falco pods only; others from same CA rejected
   extraVolumes:
   - name: ui-token
     projected:
