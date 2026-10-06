@@ -3,4 +3,4 @@
 	url = https://github.com/swiru95/n8n-hosting.git
 [submodule "config"]
 	path = config
-	url = https://github.com/swiru95/kscsc-cluster-config.git
+	url = https://dev.azure.com/kswidrak/kscsc/_git/iac-k3s

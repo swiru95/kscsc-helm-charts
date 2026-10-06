@@ -73,6 +73,13 @@ All nginx ingresses are annotated with `cert-manager.io/cluster-issuer: "kscsc-c
 
 ## 🛠️ Usage
 
+### Live values (`config/`, private)
+
+`config/` is a git submodule holding the real values for the kscsc cluster. It lives in a **private Azure DevOps repo**
+(`kswidrak/kscsc/iac-k3s`), so a public clone gets an empty `config/` — use each chart's `values.example.yaml`.
+Credentials there are Ansible-Vault encrypted overlays (`values/*.vault.yaml`).
+
+
 ### Prerequisites
 
 - **K3s** with nvidia GPU taint (`nvidia.com/gpu: present`) — all charts include the required toleration
